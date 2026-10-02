@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: securedocs-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: securedocs
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - securedocs-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: securedocs-backend
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      - NODE_ENV=production
+      - PORT=5001
+      - MONGODB_URI=mongodb://mongodb:27017/securedocs
+      - JWT_SECRET=securedocs_docker_secret_key_2026_super_secure
+    depends_on:
+      - mongodb
+    networks:
+      - securedocs-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: securedocs-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - securedocs-net
+
+volumes:
+  mongo_data:
+
+networks:
+  securedocs-net:
+    driver: bridge
