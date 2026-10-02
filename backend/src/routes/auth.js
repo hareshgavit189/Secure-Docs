@@ -7,7 +7,11 @@ import { escapeRegex } from '../lib/escapeRegex.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'securedocs_sih_2026_super_secret_jwt_key_987654321';
+const JWT_SECRET = process.env.JWT_SECRET || (
+  process.env.NODE_ENV === 'production'
+    ? (() => { throw new Error('JWT_SECRET must be configured in production'); })()
+    : 'securedocs_dev_only_secret'
+);
 
 // Seed demo users fallback map
 const DEMO_USERS = {
