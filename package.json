@@ -4,12 +4,13 @@
   "private": true,
   "description": "SecureDocs Full-Stack Application - Pure React.js, Node.js & MongoDB",
   "type": "module",
+  "packageManager": "pnpm@10.0.0",
   "scripts": {
     "dev": "node start-all.mjs",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "seed": "npm --prefix backend run seed",
-    "build": "cd frontend && npm install && npm run build"
+    "build": "pnpm --dir frontend install --frozen-lockfile && pnpm --dir frontend run build"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
