@@ -58,6 +58,10 @@ async function startServer() {
     // Auto-seed if database is empty
     await runSeed(false);
   } catch (err) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('Database initialization failed:', err.message);
+      process.exit(1);
+    }
     console.warn('DB initialization notice:', err.message);
   }
 
