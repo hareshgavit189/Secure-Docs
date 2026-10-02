@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "pnpm --dir frontend install --frozen-lockfile && pnpm --dir frontend run build",
+  "buildCommand": "pnpm --dir frontend run build",
   "outputDirectory": "frontend/dist",
   "routes": [
     {
