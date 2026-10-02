@@ -14,6 +14,7 @@ import {
   FileCheck2,
 } from 'lucide-react';
 import { documentService } from '../services/documentService';
+import { getApiUrl } from '../services/api';
 import { StatusBadge } from '../components/StatusBadge';
 
 export default function Documents() {
@@ -199,7 +200,7 @@ export default function Documents() {
                           <Eye size={15} />
                         </Link>
                         <a
-                          href={`/api/documents/${doc.documentId}/download`}
+                          href={getApiUrl(`/documents/${doc.documentId}/download`)}
                           download
                           className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
                           title="Download File"

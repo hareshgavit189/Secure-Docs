@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { caseService } from '../services/caseService';
 import { documentService } from '../services/documentService';
+import { getApiUrl } from '../services/api';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
 
@@ -297,7 +298,7 @@ export default function CaseDetail() {
 
                 <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
                   <a
-                    href={`/api/documents/${doc.documentId}/download`}
+                    href={getApiUrl(`/documents/${doc.documentId}/download`)}
                     download
                     className="p-2 border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl text-xs font-bold transition-colors"
                     title="Download Evidence"

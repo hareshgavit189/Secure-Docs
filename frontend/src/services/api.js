@@ -1,4 +1,4 @@
-const API_BASE = '/api';
+const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -18,6 +18,7 @@ async function handleResponse(response) {
       if (response.status === 404) errorMsg = 'Endpoint not found (404)';
       if (response.status === 401) errorMsg = 'Authentication required or invalid credentials';
       if (response.status === 403) errorMsg = 'Access forbidden for your current role';
+      if (response.status === 405) errorMsg = 'HTTP method not allowed for this endpoint';
       if (response.status === 500) errorMsg = 'Server internal error occurred';
     }
     throw new ApiError(response.status, errorMsg);
@@ -25,24 +26,25 @@ async function handleResponse(response) {
   return response.json();
 }
 
+function getAuthHeaders() {
+  const token = localStorage.getItem('securedocs_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export const api = {
   get: async (endpoint) => {
-    const headers = { 'Content-Type': 'application/json' };
-    const token = localStorage.getItem('securedocs_token');
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    const res = await fetch(`${API_BASE}${endpoint}`, { method: 'GET', headers });
+    const res = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'GET',
+      headers: { ...getAuthHeaders(), Accept: 'application/json' },
+    });
     return handleResponse(res);
   },
 
   post: async (endpoint, body) => {
-    const headers = {};
-    const token = localStorage.getItem('securedocs_token');
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
+    const headers = getAuthHeaders();
     let payload = body;
     if (body instanceof FormData) {
-      // browser sets multipart content-type with boundary automatically
+      payload = body;
     } else {
       headers['Content-Type'] = 'application/json';
       payload = JSON.stringify(body);
@@ -57,24 +59,23 @@ export const api = {
   },
 
   patch: async (endpoint, body) => {
-    const headers = { 'Content-Type': 'application/json' };
-    const token = localStorage.getItem('securedocs_token');
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'PATCH',
-      headers,
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     return handleResponse(res);
   },
 
   delete: async (endpoint) => {
-    const headers = {};
-    const token = localStorage.getItem('securedocs_token');
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    const res = await fetch(`${API_BASE}${endpoint}`, { method: 'DELETE', headers });
+    const res = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 };
+
+export function getApiUrl(endpoint) {
+  return `${API_BASE}${endpoint}`;
+}

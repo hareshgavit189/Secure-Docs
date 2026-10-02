@@ -15,6 +15,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { documentService } from '../services/documentService';
+import { getApiUrl } from '../services/api';
 import { StatusBadge } from '../components/StatusBadge';
 
 export default function DocumentDetail() {
@@ -100,7 +101,7 @@ export default function DocumentDetail() {
         </Link>
         <div className="flex items-center gap-2">
           <a
-            href={`/api/documents/${doc.documentId}/download`}
+            href={getApiUrl(`/documents/${doc.documentId}/download`)}
             download
             className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors"
           >

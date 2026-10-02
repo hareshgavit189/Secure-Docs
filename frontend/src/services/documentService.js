@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, getApiUrl } from './api';
 
 export const documentService = {
   getDocuments: async (params = {}) => {
@@ -29,6 +29,6 @@ export const documentService = {
   },
 
   getDownloadUrl: (id) => {
-    return `/api/documents/${id}/download`;
+    return getApiUrl(`/documents/${id}/download`);
   },
 };
