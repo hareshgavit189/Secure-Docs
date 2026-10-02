@@ -1,0 +1,14 @@
+{
+  "name": "securedocs-product-clean",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SecureDocs Full-Stack Application - Pure React.js, Node.js & MongoDB (PBL-III)",
+  "type": "module",
+  "scripts": {
+    "dev": "node start-all.mjs",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "seed": "npm --prefix backend run seed",
+    "build": "npm --prefix frontend run build"
+  }
+}
