@@ -1,5 +1,5 @@
 # SecureDocs: Cryptographic Evidence & Case Management System
-### PBL-III: Full-Stack Product Hackathon (03 October 2026)
+### Full-Stack Product Hackathon
 
 ---
 
@@ -125,25 +125,6 @@ npm run dev
 ```bash
 npm run seed
 ```
-
-## ☁️ Production Deployment (Render)
-
-This repository includes a [`render.yaml`](./render.yaml) Blueprint for deploying the
-frontend and backend as separate Render services.
-
-1. Create a MongoDB Atlas database and copy its connection string.
-2. In Render, create a **Blueprint** from this repository.
-3. Set these backend environment variables:
-   - `MONGODB_URI`: MongoDB Atlas connection string
-   - `JWT_SECRET`: long, random production secret
-   - `FRONTEND_URL`: deployed frontend URL
-4. Set the frontend variable `VITE_API_URL` to the deployed backend URL followed by
-   `/api` (for example, `https://securedocs-api.onrender.com/api`).
-5. After the first deployment, run `npm run seed` from the `backend` service only if
-   demo data is required.
-
-The frontend uses `VITE_API_URL` in production and `/api` with the Vite proxy during
-local development. Never commit production secrets or a `.env` file.
 
 ---
 

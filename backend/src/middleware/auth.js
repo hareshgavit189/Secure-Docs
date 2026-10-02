@@ -1,10 +1,6 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || (
-  process.env.NODE_ENV === 'production'
-    ? (() => { throw new Error('JWT_SECRET must be configured in production'); })()
-    : 'securedocs_dev_only_secret'
-);
+const JWT_SECRET = process.env.JWT_SECRET || 'securedocs_sih_2026_super_secret_jwt_key_987654321';
 
 export function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;

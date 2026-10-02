@@ -1,10 +1,13 @@
 import dns from 'node:dns';
 import mongoose from 'mongoose';
 
+// Configure DNS resolver for reliable SRV record resolution across various network environments
 try {
   dns.setDefaultResultOrder('ipv4first');
   dns.setServers(['8.8.8.8', '1.1.1.1']);
-} catch {}
+} catch (e) {
+  // Ignore DNS configuration errors in environments where setServers is restricted
+}
 
 let connectionPromise = null;
 
@@ -17,21 +20,27 @@ export async function connectDB() {
     return connectionPromise;
   }
 
-  const uri = process.env.MONGODB_URI?.trim();
+  const uri = process.env.MONGODB_URI;
+
   if (!uri) {
-    throw new Error('MONGODB_URI environment variable is not configured');
+    const errorMsg = '❌ MongoDB connection error: MONGODB_URI environment variable is not defined in .env';
+    console.error(errorMsg);
+    throw new Error(errorMsg);
   }
 
-  connectionPromise = mongoose.connect(uri, {
-    serverSelectionTimeoutMS: 10000,
-  }).then((connection) => {
-    console.log(`MongoDB Atlas connected: ${connection.connection.host}/${connection.connection.name}`);
-    return connection;
-  }).catch((error) => {
-    connectionPromise = null;
-    console.error(`MongoDB connection failed: ${error.message}`);
-    throw error;
-  });
+  connectionPromise = (async () => {
+    try {
+      await mongoose.connect(uri, {
+        serverSelectionTimeoutMS: 10000,
+      });
+      console.log(`✅ MongoDB Atlas connected successfully: ${mongoose.connection.host}/${mongoose.connection.name}`);
+      return mongoose.connection;
+    } catch (err) {
+      connectionPromise = null;
+      console.error(`❌ MongoDB connection failed: ${err.message}`);
+      throw err;
+    }
+  })();
 
   return connectionPromise;
 }
