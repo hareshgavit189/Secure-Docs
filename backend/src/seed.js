@@ -30,7 +30,7 @@ export async function runSeed(force = false) {
   ];
 
   for (const u of users) {
-    await User.findOneAndUpdate({ email: u.email }, { $set: u }, { upsert: true, new: true });
+    await User.findOneAndUpdate({ email: u.email }, { $set: u }, { upsert: true, returnDocument: 'after' });
   }
   console.log(`   ✅ Created ${users.length} users`);
 
@@ -104,7 +104,7 @@ export async function runSeed(force = false) {
   ];
 
   for (const c of cases) {
-    await Case.findOneAndUpdate({ caseId: c.caseId }, { $set: c }, { upsert: true, new: true });
+    await Case.findOneAndUpdate({ caseId: c.caseId }, { $set: c }, { upsert: true, returnDocument: 'after' });
   }
   console.log(`   ✅ Created ${cases.length} cases`);
 
@@ -188,7 +188,7 @@ export async function runSeed(force = false) {
   ];
 
   for (const d of sampleDocs) {
-    await SecureDocument.findOneAndUpdate({ documentId: d.documentId }, { $set: d }, { upsert: true, new: true });
+    await SecureDocument.findOneAndUpdate({ documentId: d.documentId }, { $set: d }, { upsert: true, returnDocument: 'after' });
     await Case.updateOne({ caseId: d.caseId }, { $inc: { documentsCount: 1 } });
   }
   console.log(`   ✅ Created ${sampleDocs.length} evidentiary documents`);

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 console.log('===============================================================');
-console.log('🚀 Starting SecureDocs Full-Stack Application (PBL-III Edition)');
+console.log('🚀 Starting SecureDocs Full-Stack Application');
 console.log('📦 Frontend: Pure React.js (Vite, Port 3000)');
 console.log('⚙️ Backend:  Pure Node.js + Express (Port 5001)');
 console.log('🗄️ Database: MongoDB (Mongoose)');

@@ -37,7 +37,7 @@ export function Sidebar() {
             Secure<span className="text-cyan-400">Docs</span>
           </div>
           <div className="text-[10px] uppercase font-mono tracking-widest text-slate-400">
-            PBL-III Edition
+            Legal Evidence
           </div>
         </div>
       </div>

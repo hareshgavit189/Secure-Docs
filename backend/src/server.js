@@ -14,12 +14,13 @@ const PORT = process.env.PORT || 5001;
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
   .split(',')
   .map((origin) => origin.trim())
+  .map((origin) => origin.replace(/\/+$/, ''))
   .filter(Boolean);
 
 // Middlewares
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin.replace(/\/+$/, ''))) {
       return callback(null, true);
     }
     return callback(new Error('Origin is not allowed by CORS'));
@@ -52,7 +53,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start Server
-async function startServer() {
+export async function startServer() {
   try {
     await connectDB();
     // Auto-seed if database is empty
@@ -74,6 +75,11 @@ async function startServer() {
   });
 }
 
-startServer();
+if (process.argv[1] && (
+  process.argv[1].endsWith('server.js') ||
+  process.argv[1].includes('server.js')
+)) {
+  startServer();
+}
 
 export default app;
