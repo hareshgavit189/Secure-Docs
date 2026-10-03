@@ -2,25 +2,17 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User.js';
-import { recordAudit } from '../lib/audit.js';
-import { escapeRegex } from '../lib/escapeRegex.js';
+import { recordAudit } from '../utils/audit.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 import { authenticate } from '../middleware/auth.js';
+import { config } from '../config/env.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'securedocs_sih_2026_super_secret_jwt_key_987654321';
+const JWT_SECRET = config.jwtSecret;
 
-// Seed demo users fallback map
-const DEMO_USERS = {
-  'admin@securedocs.gov': { name: 'Admin Officer', role: 'Admin', department: 'Administration', employeeId: 'ADM-001' },
-  'raj.patel@securedocs.gov': { name: 'Officer Raj Patel', role: 'Officer', department: 'Investigation', employeeId: 'OFF-001' },
-  'mehta@securedocs.gov': { name: 'Legal Counsel Mehta', role: 'Legal Reviewer', department: 'Legal Department', employeeId: 'LEG-001' },
-  'auditor@securedocs.gov': { name: 'Auditor Verma', role: 'Auditor', department: 'Compliance & Audit', employeeId: 'AUD-001' },
-  'clerk@securedocs.gov': { name: 'Clerk Sharma', role: 'Clerk', department: 'Records', employeeId: 'CLK-001' },
-};
-
-// -------------------------------------------------------------
+// ─────────────────────────────────────────────────────
 // POST /api/auth/login
-// -------------------------------------------------------------
+// ─────────────────────────────────────────────────────
 router.post('/login', async (req, res) => {
   try {
     const { identifier, email, employeeId, password } = req.body;
@@ -33,43 +25,37 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Password is required' });
     }
 
-    let user = await User.findOne({
+    // Find user by email OR employeeId
+    const user = await User.findOne({
       $or: [
         { email: loginId },
         { employeeId: new RegExp(`^${escapeRegex(loginId)}$`, 'i') },
       ],
     });
 
-    // Auto-create or verify demo users if not present
+    // BUG FIX #1: Removed undefined DEMO_USERS reference — properly return 401
     if (!user) {
-      const demo = DEMO_USERS[loginId];
-      if (demo && (password === 'password123' || password === 'admin123' || password === 'SecureDocs@2026')) {
-        const hash = await bcrypt.hash(password, 10);
-        user = await User.create({
-          email: loginId.includes('@') ? loginId : `${loginId}@securedocs.gov`,
-          name: demo.name,
-          role: demo.role,
-          department: demo.department,
-          employeeId: demo.employeeId,
-          passwordHash: hash,
-          isActive: true,
-        });
-      } else {
-        return res.status(401).json({ error: 'Invalid credentials. Please verify email and password.' });
-      }
-    } else {
-      const isMatch = await bcrypt.compare(password, user.passwordHash);
-      if (!isMatch && password !== 'password123' && password !== 'SecureDocs@2026') {
-        return res.status(401).json({ error: 'Invalid credentials. Incorrect password.' });
-      }
+      return res.status(401).json({
+        error: 'Invalid credentials. No account found with this email or Employee ID.',
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({ error: 'Account is inactive. Contact your administrator.' });
+    }
+
+    // BUG FIX #3: Removed password bypass — only use bcrypt.compare
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid credentials. Incorrect password.' });
     }
 
     const token = jwt.sign(
       {
-        userId: user._id,
-        email: user.email,
-        role: user.role,
-        name: user.name,
+        userId:     user._id,
+        email:      user.email,
+        role:       user.role,
+        name:       user.name,
         employeeId: user.employeeId,
         department: user.department,
       },
@@ -78,41 +64,47 @@ router.post('/login', async (req, res) => {
     );
 
     await recordAudit({
-      action: 'USER_LOGIN',
-      userId: user._id.toString(),
-      userName: user.name,
-      userRole: user.role,
-      details: `User ${user.email} (${user.role}) logged in successfully`,
-      result: 'Success',
+      action:    'USER_LOGIN',
+      userId:    user._id.toString(),
+      userName:  user.name,
+      userRole:  user.role,
+      details:   `User ${user.email} (${user.role}) logged in successfully`,
+      result:    'Success',
       ipAddress: req.ip || '127.0.0.1',
     });
 
     return res.json({
       token,
       user: {
-        id: user._id,
-        _id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
+        id:         user._id,
+        _id:        user._id,
+        email:      user.email,
+        name:       user.name,
+        role:       user.role,
         department: user.department,
         employeeId: user.employeeId,
       },
     });
   } catch (err) {
+    console.error('Login error:', err);
     return res.status(500).json({ error: 'Login process error', details: err.message });
   }
 });
 
-// -------------------------------------------------------------
+// ─────────────────────────────────────────────────────
 // POST /api/auth/register
-// -------------------------------------------------------------
+// ─────────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, role = 'Officer', department = 'Investigation', employeeId } = req.body;
+    // BUG FIX #2: Added employeeId to destructuring (was undefined before)
+    const { name, email, password, role, department, employeeId } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
     const existing = await User.findOne({ email: email.toLowerCase().trim() });
@@ -122,21 +114,21 @@ router.post('/register', async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
-      role,
-      department,
-      employeeId: employeeId || `EMP-${Math.floor(100 + Math.random() * 900)}`,
+      name:       name.trim(),
+      email:      email.toLowerCase().trim(),
+      role:       role || 'Officer',
+      department: department || 'Investigation',
+      employeeId: employeeId?.trim() || `EMP-${Math.floor(100 + Math.random() * 900)}`,
       passwordHash,
-      isActive: true,
+      isActive:   true,
     });
 
     const token = jwt.sign(
       {
-        userId: user._id,
-        email: user.email,
-        role: user.role,
-        name: user.name,
+        userId:     user._id,
+        email:      user.email,
+        role:       user.role,
+        name:       user.name,
         employeeId: user.employeeId,
         department: user.department,
       },
@@ -145,34 +137,35 @@ router.post('/register', async (req, res) => {
     );
 
     await recordAudit({
-      action: 'USER_REGISTER',
-      userId: user._id.toString(),
+      action:   'USER_REGISTER',
+      userId:   user._id.toString(),
       userName: user.name,
       userRole: user.role,
-      details: `New account registered for ${user.email} with role ${user.role}`,
-      result: 'Success',
+      details:  `New account registered for ${user.email} with role ${user.role}`,
+      result:   'Success',
     });
 
     return res.status(201).json({
       token,
       user: {
-        id: user._id,
-        _id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
+        id:         user._id,
+        _id:        user._id,
+        email:      user.email,
+        name:       user.name,
+        role:       user.role,
         department: user.department,
         employeeId: user.employeeId,
       },
     });
   } catch (err) {
+    console.error('Register error:', err);
     return res.status(500).json({ error: 'Registration failed', details: err.message });
   }
 });
 
-// -------------------------------------------------------------
+// ─────────────────────────────────────────────────────
 // GET /api/auth/me
-// -------------------------------------------------------------
+// ─────────────────────────────────────────────────────
 router.get('/me', authenticate, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select('-passwordHash').lean();
@@ -183,9 +176,9 @@ router.get('/me', authenticate, async (req, res) => {
   }
 });
 
-// -------------------------------------------------------------
+// ─────────────────────────────────────────────────────
 // POST /api/auth/logout
-// -------------------------------------------------------------
+// ─────────────────────────────────────────────────────
 router.post('/logout', (req, res) => {
   return res.json({ success: true, message: 'Logged out successfully' });
 });
