@@ -133,7 +133,7 @@ router.post('/register', async (req, res) => {
         department: user.department,
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '1h' }
     );
 
     await recordAudit({
