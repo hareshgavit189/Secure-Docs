@@ -111,15 +111,15 @@ export default function DocumentDetail() {
       </div>
 
       {/* Main Card */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 md:p-8 space-y-6">
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-4 sm:p-6 md:p-8 space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-100 pb-6">
-          <div className="flex items-start gap-4">
-            <div className="size-12 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0 font-bold">
-              <FileText size={24} />
+          <div className="flex items-start gap-3 sm:gap-4 min-w-0 flex-1">
+            <div className="size-11 sm:size-12 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0 font-bold">
+              <FileText size={22} />
             </div>
-            <div>
-              <div className="flex items-center gap-2 mb-1.5">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1.5">
                 <span className="font-mono text-xs font-bold text-slate-500">{doc.documentId}</span>
                 <StatusBadge value={doc.integrity} />
                 <StatusBadge value={doc.confidentiality} />
@@ -127,7 +127,9 @@ export default function DocumentDetail() {
                   {doc.documentType}
                 </span>
               </div>
-              <h1 className="text-xl font-black text-slate-900">{doc.documentName}</h1>
+              <h1 className="text-lg sm:text-xl font-black text-slate-900 break-words break-all sm:break-normal">
+                {doc.documentName}
+              </h1>
               <p className="text-xs text-slate-400 mt-0.5">
                 Bound to Case:{' '}
                 <Link href={`/cases/${doc.caseId}`} className="font-bold text-cyan-600 hover:underline">
@@ -139,16 +141,16 @@ export default function DocumentDetail() {
         </div>
 
         {/* SHA-256 Signature Box */}
-        <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-          <div className="flex items-center justify-between">
+        <div className="p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
-              <Hash size={16} className="text-cyan-600" />
-              Cryptographic SHA-256 Ledger Signature
+              <Hash size={16} className="text-cyan-600 shrink-0" />
+              <span>Cryptographic SHA-256 Ledger Signature</span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={handleCopy}
-                className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold transition-colors"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
               >
                 {copied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
                 {copied ? 'Copied' : 'Copy Hash'}
@@ -156,7 +158,7 @@ export default function DocumentDetail() {
               <button
                 onClick={handleVerify}
                 disabled={verifying}
-                className="flex items-center gap-1.5 px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
               >
                 <ShieldCheck size={12} />
                 {verifying ? 'Verifying...' : 'Verify Signature'}

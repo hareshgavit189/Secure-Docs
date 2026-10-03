@@ -52,33 +52,33 @@ export default function Dashboard() {
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* Top Welcome & Quick Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
             Security & Evidence Dashboard
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Real-time MongoDB tamper-evident depository & case tracking system
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
           <button
             onClick={fetchDashboardData}
             title="Refresh metrics"
-            className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
+            className="p-2 sm:p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors shadow-sm cursor-pointer"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
           <Link
             href="/cases/new"
-            className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-cyan-600/20"
+            className="flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-cyan-600/20"
           >
             <Plus size={16} />
             New Case
           </Link>
           <Link
             href="/upload"
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-slate-800/20"
+            className="flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-slate-800/20"
           >
             <Upload size={16} />
             Upload Evidence
@@ -87,32 +87,32 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
         {/* Total Cases */}
-        <Link href="/cases" className="group p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-cyan-300 transition-all">
+        <Link href="/cases" className="group p-4 sm:p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-cyan-300 transition-all">
           <div className="flex items-center justify-between">
-            <div className="size-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              <Briefcase size={20} />
+            <div className="size-8 sm:size-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <Briefcase size={18} />
             </div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active</span>
+            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active</span>
           </div>
-          <div className="mt-4">
-            <div className="text-3xl font-black font-mono text-slate-900">{stats.totalCases}</div>
-            <div className="text-xs font-bold text-slate-500 mt-1">Total Case Files</div>
+          <div className="mt-3 sm:mt-4">
+            <div className="text-2xl sm:text-3xl font-black font-mono text-slate-900">{stats.totalCases}</div>
+            <div className="text-[11px] sm:text-xs font-bold text-slate-500 mt-1">Total Case Files</div>
           </div>
         </Link>
 
         {/* Total Documents */}
-        <Link href="/documents" className="group p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-cyan-300 transition-all">
+        <Link href="/documents" className="group p-4 sm:p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-cyan-300 transition-all">
           <div className="flex items-center justify-between">
-            <div className="size-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center font-bold">
-              <FileText size={20} />
+            <div className="size-8 sm:size-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center font-bold">
+              <FileText size={18} />
             </div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Repository</span>
+            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Repository</span>
           </div>
-          <div className="mt-4">
-            <div className="text-3xl font-black font-mono text-slate-900">{stats.totalDocuments}</div>
-            <div className="text-xs font-bold text-slate-500 mt-1">Evidentiary Documents</div>
+          <div className="mt-3 sm:mt-4">
+            <div className="text-2xl sm:text-3xl font-black font-mono text-slate-900">{stats.totalDocuments}</div>
+            <div className="text-[11px] sm:text-xs font-bold text-slate-500 mt-1">Evidentiary Documents</div>
           </div>
         </Link>
 

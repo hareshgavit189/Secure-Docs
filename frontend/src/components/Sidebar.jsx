@@ -88,14 +88,21 @@ function SidebarNav({ onClose }) {
 
 /**
  * Responsive Sidebar:
- * - Desktop: Always visible permanent sidebar
- * - Mobile: Sliding drawer from left with smooth transition
+ * - Desktop: Collapsible via width transition (3-lines hamburger toggle)
+ * - Mobile: Sliding drawer from left with backdrop
  */
-export function Sidebar({ isOpen, onClose }) {
+export function Sidebar({ isDesktopOpen, isMobileOpen, onCloseMobile }) {
   return (
     <>
-      {/* ── Desktop Permanent Sidebar ── */}
-      <aside className="hidden lg:flex flex-col w-64 shrink-0 min-h-screen border-r border-slate-800 bg-[#18263b] sticky top-0 h-screen">
+      {/* ── Desktop Collapsible Sidebar (w-64 <-> w-0) ── */}
+      <aside
+        className={`
+          hidden lg:block shrink-0 overflow-hidden
+          transition-[width] duration-300 ease-in-out
+          bg-[#18263b] border-r border-slate-800 sticky top-0 h-screen
+          ${isDesktopOpen ? 'w-64' : 'w-0 border-r-0'}
+        `}
+      >
         <SidebarNav />
       </aside>
 
@@ -104,11 +111,12 @@ export function Sidebar({ isOpen, onClose }) {
         className={`
           fixed inset-y-0 left-0 z-50 w-72 bg-[#18263b] border-r border-slate-800 shadow-2xl lg:hidden
           transition-transform duration-300 ease-in-out
-          ${isOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'}
+          ${isMobileOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'}
         `}
       >
-        <SidebarNav onClose={onClose} />
+        <SidebarNav onClose={onCloseMobile} />
       </aside>
     </>
   );
 }
+
