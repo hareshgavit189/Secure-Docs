@@ -192,6 +192,7 @@ const uploadDocument = async (req, res) => {
       const bucket = getGridFSBucket();
       const uploadStream = bucket.openUploadStream(originalFilename, {
         contentType: mimeType,
+        
         metadata: {
           caseId: caseId.trim().toUpperCase(),
           uploadedBy: uploaderName,
