@@ -38,11 +38,34 @@ const documentSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+
+    // ── Cryptographic Integrity Fields ────────────────────────────────────────
+    /**
+     * SHA-256 hash of the raw file bytes.
+     * Detects accidental corruption (bit-flip, storage error, etc.).
+     * Computed with Node.js crypto.createHash('sha256').
+     */
     hash: {
       type: String,
       required: true,
       trim: true,
     },
+
+    /**
+     * HMAC-SHA-256 of the raw file bytes, keyed with DOCUMENT_HMAC_SECRET.
+     * Detects deliberate tampering — proves the file was created by this system.
+     * The HMAC secret is NEVER stored here; it lives only in process.env.
+     *
+     * Empty string for legacy/seed documents uploaded before HMAC was added.
+     * When empty, the download route falls back to SHA-256-only verification.
+     */
+    hmac: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
     version: {
       type: Number,
       default: 1,
@@ -72,16 +95,16 @@ const documentSchema = new mongoose.Schema(
       default: 'Confidential',
     },
     fileData: {
-      type: String, // Base64 encoded or content for demo download (for small files)
+      type: String,   // Base64-encoded file content
       default: '',
-    },
-    gridFsFileId: {
-      type: mongoose.Schema.Types.ObjectId,
-      default: null,
     },
     totalAccesses: {
       type: Number,
       default: 1,
+    },
+    lastAccessed: {
+      type: Date,
+      default: null,
     },
     lastAccessedBy: {
       type: String,
