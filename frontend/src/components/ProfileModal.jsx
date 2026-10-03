@@ -13,9 +13,9 @@ export function ProfileModal({ isOpen, onClose }) {
     switch (userRole) {
       case 'Admin':
         return {
-          headerBg: 'bg-gradient-to-r from-amber-600 via-purple-600 to-indigo-700',
-          badgeClass: 'bg-amber-100 text-amber-900 border-amber-300',
-          iconColor: 'text-amber-400',
+          headerBg: 'bg-[#18263b] border-b border-slate-700/60',
+          badgeClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+          iconColor: 'text-cyan-400',
           clearance: 'Level 5 (Full System Administration & Key Management)',
           permissions: [
             'Full System Administration & Configuration',
@@ -26,9 +26,9 @@ export function ProfileModal({ isOpen, onClose }) {
         };
       case 'Legal Reviewer':
         return {
-          headerBg: 'bg-gradient-to-r from-indigo-600 to-blue-700',
-          badgeClass: 'bg-indigo-100 text-indigo-900 border-indigo-300',
-          iconColor: 'text-indigo-400',
+          headerBg: 'bg-[#18263b] border-b border-slate-700/60',
+          badgeClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+          iconColor: 'text-cyan-400',
           clearance: 'Level 4 (Legal Audit & Chain of Custody Sign-Off)',
           permissions: [
             'Inspect Legal Evidence & Chain of Custody',
@@ -38,8 +38,8 @@ export function ProfileModal({ isOpen, onClose }) {
         };
       case 'Auditor':
         return {
-          headerBg: 'bg-gradient-to-r from-emerald-600 to-teal-700',
-          badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+          headerBg: 'bg-[#18263b] border-b border-slate-700/60',
+          badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
           iconColor: 'text-emerald-400',
           clearance: 'Level 3 (Cryptographic Audit & Compliance Inspection)',
           permissions: [
@@ -51,8 +51,8 @@ export function ProfileModal({ isOpen, onClose }) {
       case 'Officer':
       default:
         return {
-          headerBg: 'bg-gradient-to-r from-cyan-700 to-slate-800',
-          badgeClass: 'bg-cyan-100 text-cyan-900 border-cyan-300',
+          headerBg: 'bg-[#18263b] border-b border-slate-700/60',
+          badgeClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
           iconColor: 'text-cyan-400',
           clearance: 'Level 3 (Case Investigation & Evidence Management)',
           permissions: [
