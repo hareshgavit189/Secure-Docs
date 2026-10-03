@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Search, Menu, X, LogOut } from 'lucide-react';
+import { Search, Menu, X, LogOut, User, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ProfileModal } from './ProfileModal';
 
 /**
  * Top Navbar with hamburger (☰ / ✕) toggle button, search,
- * clickable user/admin role profile button, and top-right Sign Out button.
+ * clickable user/admin role profile button with icon, and top-right Sign Out button.
  */
 export function Navbar({ onSearch, onMenuToggle, sidebarOpen }) {
   const { user, logout }              = useAuth();
@@ -18,13 +18,13 @@ export function Navbar({ onSearch, onMenuToggle, sidebarOpen }) {
     if (onSearch) onSearch(val);
   };
 
-  const role = user?.role || 'Officer';
+  const role = user?.role || 'Admin';
 
   const getRoleBadgeStyle = (r) => {
-    if (r === 'Admin') return 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200';
-    if (r === 'Legal Reviewer') return 'bg-indigo-100 text-indigo-900 border-indigo-300 hover:bg-indigo-200';
-    if (r === 'Auditor') return 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200';
-    return 'bg-cyan-100 text-cyan-900 border-cyan-300 hover:bg-cyan-200';
+    if (r === 'Admin') return 'bg-cyan-50 text-cyan-700 border-cyan-200 hover:bg-cyan-100';
+    if (r === 'Legal Reviewer') return 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100';
+    if (r === 'Auditor') return 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100';
+    return 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200';
   };
 
   return (
@@ -34,11 +34,10 @@ export function Navbar({ onSearch, onMenuToggle, sidebarOpen }) {
         {/* ── Hamburger Toggle (all screen sizes) ── */}
         <button
           onClick={onMenuToggle}
-          className="p-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 active:scale-95 transition-all shrink-0"
+          className="p-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 active:scale-95 transition-all shrink-0 cursor-pointer"
           aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
           title={sidebarOpen ? 'Close menu' : 'Open menu'}
         >
-          {/* Animate between ☰ and ✕ */}
           <span className={`block transition-transform duration-200 ${sidebarOpen ? 'rotate-90' : 'rotate-0'}`}>
             {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
           </span>
@@ -59,47 +58,55 @@ export function Navbar({ onSearch, onMenuToggle, sidebarOpen }) {
           />
         </div>
 
-        {/* ── Right Corner Controls ── */}
+        {/* ── Top Right Corner Controls ── */}
         <div className="ml-auto flex items-center gap-2 sm:gap-3 shrink-0">
 
           {/* Security status badge */}
-          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-[11px] font-semibold text-emerald-700 whitespace-nowrap">
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-[11px] font-semibold text-emerald-700 whitespace-nowrap">
             <span className="size-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <span>SHA-256 Chain Active</span>
+            <span className="hidden md:inline">SHA-256 Active</span>
+            <span className="md:hidden">Secure</span>
           </div>
 
-          {/* ── Interactive Admin / User Role Button (Tap to see Profile) ── */}
+          <div className="h-6 w-px bg-slate-200 hidden sm:block" />
+
+          {/* ── Interactive Admin / User Role Button (Tap to view full Profile) ── */}
           <button
+            type="button"
             onClick={() => setShowProfileModal(true)}
-            className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 active:scale-95 transition-all text-left group shadow-2xs"
-            title="Click to view profile and role permissions"
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-cyan-50/60 hover:border-cyan-300 active:scale-95 transition-all text-left group cursor-pointer"
+            title="Click to view full user profile & role permissions"
             aria-label="View user profile"
           >
-            <div className="size-7 rounded-full bg-slate-800 text-cyan-300 font-bold text-[11px] flex items-center justify-center shrink-0 shadow-sm border border-slate-700">
-              {user?.name ? user.name.slice(0, 2).toUpperCase() : 'US'}
+            {/* Admin Icon inside Top Right Button */}
+            <div className="size-7 rounded-lg bg-cyan-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs group-hover:bg-cyan-700 transition-colors">
+              <User size={15} />
             </div>
-            <div className="hidden md:block text-left">
-              <div className="text-xs font-bold text-slate-800 truncate max-w-[120px] group-hover:text-cyan-700 transition-colors">
-                {user?.name || 'Authorized Officer'}
+
+            <div className="hidden sm:block text-left">
+              <div className="text-xs font-bold text-slate-800 truncate max-w-[130px] group-hover:text-cyan-700 transition-colors leading-tight">
+                {user?.name || 'Admin Officer'}
               </div>
-              <div className="text-[10px] text-slate-500 truncate max-w-[120px]">
-                {user?.department || 'Investigation'}
+              <div className="text-[10px] text-slate-500 truncate max-w-[130px] leading-tight">
+                {user?.department || 'Administration'}
               </div>
             </div>
-            <span className={`px-2 py-0.5 text-[10px] font-extrabold border rounded-md whitespace-nowrap transition-colors ${getRoleBadgeStyle(role)}`}>
+
+            <span className={`px-2 py-0.5 text-[10px] font-bold border rounded-md whitespace-nowrap transition-colors ${getRoleBadgeStyle(role)}`}>
               {role}
             </span>
           </button>
 
           {/* ── Top Right Corner Sign Out Button ── */}
           <button
+            type="button"
             onClick={logout}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-red-600 bg-slate-100 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-xl transition-all shrink-0 active:scale-95 shadow-2xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-xl transition-all shrink-0 active:scale-95 shadow-2xs cursor-pointer"
             title="Sign Out of Portal"
             aria-label="Sign out"
           >
-            <LogOut size={15} className="text-slate-500 group-hover:text-red-600 shrink-0" />
-            <span className="hidden sm:inline">Sign Out</span>
+            <LogOut size={15} />
+            <span className="hidden md:inline">Sign Out</span>
           </button>
 
         </div>
@@ -113,4 +120,5 @@ export function Navbar({ onSearch, onMenuToggle, sidebarOpen }) {
     </>
   );
 }
+
 
