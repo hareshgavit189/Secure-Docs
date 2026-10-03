@@ -180,7 +180,14 @@ router.get('/me', authenticate, async (req, res) => {
 // POST /api/auth/logout
 // ─────────────────────────────────────────────────────
 router.post('/logout', (req, res) => {
-  return res.json({ success: true, message: 'Logged out successfully' });
-});
+  res.clearCookie('token', {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production'
+  });
 
-export default router;
+  return res.json({
+    success: true,
+    message: 'Logged out successfully'
+  });
+});
