@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { AuditLog } from '../models/AuditLog.js';
-import { escapeRegex } from '../utils/escapeRegex.js';
+import { escapeRegex } from '../lib/escapeRegex.js';
+import { authenticate, authorizeRoles } from '../middleware/auth.js';
 
 const router = Router();
 
 // -------------------------------------------------------------
-// GET /api/audit - List audit logs
+// GET /api/audit - List audit logs (Admin, Auditor only)
 // -------------------------------------------------------------
-router.get('/', async (req, res) => {
+router.get('/', authenticate, authorizeRoles('Admin', 'Auditor'), async (req, res) => {
   try {
     const { search, limit = 50 } = req.query;
     const query = {};
@@ -40,9 +41,9 @@ router.get('/', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// GET /api/audit/verify-chain - Cryptographic Block Verification
+// GET /api/audit/verify-chain - Cryptographic Block Verification (Admin, Auditor only)
 // -------------------------------------------------------------
-router.get('/verify-chain', async (req, res) => {
+router.get('/verify-chain', authenticate, authorizeRoles('Admin', 'Auditor'), async (req, res) => {
   try {
     const logs = await AuditLog.find().sort({ timestamp: 1, _id: 1 }).lean();
 

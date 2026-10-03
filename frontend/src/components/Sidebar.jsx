@@ -10,17 +10,25 @@ import {
   X,
 } from 'lucide-react';
 
-const navItems = [
-  { label: 'Dashboard',          path: '/dashboard',  icon: LayoutDashboard },
-  { label: 'Cases Repository',   path: '/cases',      icon: Briefcase },
-  { label: 'Evidence Documents', path: '/documents',  icon: FileText },
-  { label: 'Upload Evidence',    path: '/upload',     icon: Upload },
-  { label: 'Integrity Suite',    path: '/integrity',  icon: ShieldCheck },
-  { label: 'Cryptographic Audit',path: '/audit',      icon: History },
+import { useAuth } from '../context/AuthContext';
+
+const allNavItems = [
+  { label: 'Dashboard',          path: '/dashboard',  icon: LayoutDashboard, roles: ['Admin', 'Officer', 'Legal Reviewer', 'Auditor'] },
+  { label: 'Cases Repository',   path: '/cases',      icon: Briefcase,       roles: ['Admin', 'Officer', 'Legal Reviewer', 'Auditor'] },
+  { label: 'Evidence Documents', path: '/documents',  icon: FileText,        roles: ['Admin', 'Officer', 'Legal Reviewer', 'Auditor'] },
+  { label: 'Upload Evidence',    path: '/upload',     icon: Upload,          roles: ['Admin', 'Officer'] },
+  { label: 'Integrity Suite',    path: '/integrity',  icon: ShieldCheck,     roles: ['Admin', 'Officer', 'Legal Reviewer', 'Auditor'] },
+  { label: 'Cryptographic Audit',path: '/audit',      icon: History,         roles: ['Admin', 'Auditor'] },
 ];
 
 function SidebarNav({ onClose }) {
   const [location] = useLocation();
+  const { user } = useAuth();
+
+  const userRole = user?.role || 'Officer';
+  const visibleNavItems = allNavItems.filter((item) =>
+    item.roles.includes(userRole)
+  );
 
   return (
     <div className="flex flex-col h-full bg-[#18263b] text-slate-300 select-none">
@@ -58,7 +66,7 @@ function SidebarNav({ onClose }) {
           Core Workspaces
         </div>
 
-        {navItems.map(({ label, path, icon: Icon }) => {
+        {visibleNavItems.map(({ label, path, icon: Icon }) => {
           const active =
             location === path ||
             (path !== '/dashboard' && location.startsWith(path));

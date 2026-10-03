@@ -2,13 +2,14 @@ import { Router } from 'express';
 import { Case } from '../models/Case.js';
 import { SecureDocument } from '../models/Document.js';
 import { AuditLog } from '../models/AuditLog.js';
+import { authenticate, authorizeRoles } from '../middleware/auth.js';
 
 const router = Router();
 
 // -------------------------------------------------------------
-// GET /api/dashboard/stats - Executive metrics
+// GET /api/dashboard/stats - Executive metrics (All authenticated roles)
 // -------------------------------------------------------------
-router.get('/stats', async (req, res) => {
+router.get('/stats', authenticate, authorizeRoles('Admin', 'Officer', 'Legal Reviewer', 'Auditor'), async (req, res) => {
   try {
     const [totalCases, totalDocs, pendingDocs, verifiedDocs, recentAudits, activeCases] = await Promise.all([
       Case.countDocuments(),

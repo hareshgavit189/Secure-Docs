@@ -1,16 +1,16 @@
 import { Router } from 'express';
 import { Case } from '../models/Case.js';
 import { SecureDocument } from '../models/Document.js';
-import { recordAudit } from '../utils/audit.js';
-import { escapeRegex } from '../utils/escapeRegex.js';
-import { authenticate } from '../middleware/auth.js';
+import { recordAudit } from '../lib/audit.js';
+import { escapeRegex } from '../lib/escapeRegex.js';
+import { authenticate, authorizeRoles } from '../middleware/auth.js';
 
 const router = Router();
 
 // -------------------------------------------------------------
-// GET /api/cases - List & search cases
+// GET /api/cases - List & search cases (Admin, Officer, Legal Reviewer, Auditor)
 // -------------------------------------------------------------
-router.get('/', async (req, res) => {
+router.get('/', authenticate, authorizeRoles('Admin', 'Officer', 'Legal Reviewer', 'Auditor'), async (req, res) => {
   try {
     const { search, status, priority, risk, department, type } = req.query;
     const query = {};
@@ -53,9 +53,9 @@ router.get('/', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// GET /api/cases/:id - Get single case with its documents
+// GET /api/cases/:id - Get single case with its documents (Admin, Officer, Legal Reviewer, Auditor)
 // -------------------------------------------------------------
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticate, authorizeRoles('Admin', 'Officer', 'Legal Reviewer', 'Auditor'), async (req, res) => {
   try {
     const { id } = req.params;
     const query = id.startsWith('C-') ? { caseId: id } : { _id: id };
@@ -77,9 +77,9 @@ router.get('/:id', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// POST /api/cases - Create new case (CRUD: Create)
+// POST /api/cases - Create new case (Admin, Officer only)
 // -------------------------------------------------------------
-router.post('/', async (req, res) => {
+router.post('/', authenticate, authorizeRoles('Admin', 'Officer'), async (req, res) => {
   try {
     const {
       caseId,
@@ -87,7 +87,7 @@ router.post('/', async (req, res) => {
       type = 'Investigation',
       description = '',
       department = 'Investigation',
-      assignedOfficer = 'Officer Raj Patel',
+      assignedOfficer,
       priority = 'Medium',
       confidentiality = 'Confidential',
       risk = 'Low',
@@ -121,21 +121,23 @@ router.post('/', async (req, res) => {
       type,
       description: description.trim(),
       department,
-      assignedOfficer: assignedOfficer.trim(),
+      assignedOfficer: (assignedOfficer || req.user.name || 'Officer Raj Patel').trim(),
       priority,
       status: 'Active',
       risk,
       confidentiality,
       startDate: startDate ? new Date(startDate) : new Date(),
       documentsCount: 0,
-      createdBy: req.body.createdBy || 'Authorized Officer',
+      createdBy: req.user.name,
     });
 
     await recordAudit({
       action: 'CASE_CREATED',
+      userId: req.user.userId,
+      userName: req.user.name,
+      userRole: req.user.role,
       caseId: finalCaseId,
       details: `New case registered: ${title} (${finalCaseId}) under ${department}`,
-      userName: req.body.createdBy || 'Authorized Officer',
       result: 'Success',
     });
 
@@ -146,30 +148,84 @@ router.post('/', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// PATCH /api/cases/:id - Update case (CRUD: Update)
+// PATCH /api/cases/:id/legal-status - Review/Update legal status (Admin, Officer, Legal Reviewer)
 // -------------------------------------------------------------
-router.patch('/:id', async (req, res) => {
+router.patch('/:id/legal-status', authenticate, authorizeRoles('Admin', 'Officer', 'Legal Reviewer'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' });
+    }
+
+    const query = id.startsWith('C-') ? { caseId: id } : { _id: id };
+    const updated = await Case.findOneAndUpdate(query, { $set: { status } }, { returnDocument: 'after' }).lean();
+    if (!updated) {
+      return res.status(404).json({ error: 'Case not found' });
+    }
+
+    await recordAudit({
+      action: 'CASE_LEGAL_STATUS_UPDATED',
+      userId: req.user.userId,
+      userName: req.user.name,
+      userRole: req.user.role,
+      caseId: updated.caseId,
+      details: `Case ${updated.caseId} legal status updated to "${status}" by ${req.user.name} (${req.user.role})`,
+      result: 'Success',
+    });
+
+    return res.json({ ...updated, id: updated._id });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update case legal status', details: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// PATCH /api/cases/:id - Update case details (Admin, Officer; Legal Reviewer restricted to status)
+// -------------------------------------------------------------
+router.patch('/:id', authenticate, authorizeRoles('Admin', 'Officer', 'Legal Reviewer'), async (req, res) => {
   try {
     const { id } = req.params;
     const query = id.startsWith('C-') ? { caseId: id } : { _id: id };
 
+    // Legal Reviewer is strictly restricted to updating status
+    if (req.user.role === 'Legal Reviewer') {
+      const attemptedKeys = Object.keys(req.body).filter(
+        (key) => req.body[key] !== undefined && key !== 'status'
+      );
+      if (attemptedKeys.length > 0) {
+        return res.status(403).json({
+          message: 'Access denied. Insufficient permissions.',
+          error: `Forbidden: Legal Reviewer can only review and update legal status, not general case metadata [${attemptedKeys.join(', ')}].`,
+        });
+      }
+    }
+
     const updateFields = {};
-    const allowed = ['title', 'status', 'priority', 'risk', 'description', 'department', 'assignedOfficer', 'confidentiality'];
-    
+    const allowed = req.user.role === 'Legal Reviewer'
+      ? ['status']
+      : ['title', 'status', 'priority', 'risk', 'description', 'department', 'assignedOfficer', 'confidentiality'];
+
     allowed.forEach((field) => {
       if (req.body[field] !== undefined) updateFields[field] = req.body[field];
     });
 
-    const updated = await Case.findOneAndUpdate(query, { $set: updateFields }, { new: true }).lean();
+    if (Object.keys(updateFields).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided to update' });
+    }
+
+    const updated = await Case.findOneAndUpdate(query, { $set: updateFields }, { returnDocument: 'after' }).lean();
     if (!updated) {
       return res.status(404).json({ error: 'Case not found' });
     }
 
     await recordAudit({
       action: 'CASE_UPDATED',
+      userId: req.user.userId,
+      userName: req.user.name,
+      userRole: req.user.role,
       caseId: updated.caseId,
-      details: `Case ${updated.caseId} updated: ${Object.keys(updateFields).join(', ')}`,
-      userName: req.body.updatedBy || 'System User',
+      details: `Case ${updated.caseId} updated: ${Object.keys(updateFields).join(', ')} by ${req.user.name} (${req.user.role})`,
       result: 'Success',
     });
 
@@ -180,9 +236,9 @@ router.patch('/:id', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// DELETE /api/cases/:id - Delete case (CRUD: Delete)
+// DELETE /api/cases/:id - Delete case (Admin only)
 // -------------------------------------------------------------
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticate, authorizeRoles('Admin'), async (req, res) => {
   try {
     const { id } = req.params;
     const query = id.startsWith('C-') ? { caseId: id } : { _id: id };
@@ -193,14 +249,16 @@ router.delete('/:id', async (req, res) => {
     }
 
     await Case.deleteOne({ _id: target._id });
-    // Also remove or unlink associated documents
+    // Also remove associated documents
     await SecureDocument.deleteMany({ caseId: target.caseId });
 
     await recordAudit({
       action: 'CASE_DELETED',
+      userId: req.user.userId,
+      userName: req.user.name,
+      userRole: req.user.role,
       caseId: target.caseId,
-      details: `Case ${target.caseId} and all associated evidentiary documents deleted`,
-      userName: 'Admin User',
+      details: `Case ${target.caseId} and all associated evidentiary documents deleted by Admin ${req.user.name}`,
       result: 'Success',
     });
 

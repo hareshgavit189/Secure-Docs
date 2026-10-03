@@ -17,8 +17,10 @@ import {
 import { auditService } from '../services/auditService';
 import { caseService } from '../services/caseService';
 import { StatusBadge } from '../components/StatusBadge';
+import { useAuth } from '../context/AuthContext';
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     totalCases: 0,
     totalDocuments: 0,
@@ -28,6 +30,10 @@ export default function Dashboard() {
   });
   const [recentCases, setRecentCases] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const canCreateCase = ['Admin', 'Officer'].includes(user?.role);
+  const canUploadEvidence = ['Admin', 'Officer'].includes(user?.role);
+  const canViewAudit = ['Admin', 'Auditor'].includes(user?.role);
 
   const fetchDashboardData = async () => {
     try {
@@ -52,67 +58,71 @@ export default function Dashboard() {
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* Top Welcome & Quick Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
             Security & Evidence Dashboard
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Real-time MongoDB tamper-evident depository & case tracking system
           </p>
         </div>
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={fetchDashboardData}
             title="Refresh metrics"
-            className="p-2 sm:p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors shadow-sm cursor-pointer"
+            className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
-          <Link
-            href="/cases/new"
-            className="flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-cyan-600/20"
-          >
-            <Plus size={16} />
-            New Case
-          </Link>
-          <Link
-            href="/upload"
-            className="flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-slate-800/20"
-          >
-            <Upload size={16} />
-            Upload Evidence
-          </Link>
+          {canCreateCase && (
+            <Link
+              href="/cases/new"
+              className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-cyan-600/20"
+            >
+              <Plus size={16} />
+              New Case
+            </Link>
+          )}
+          {canUploadEvidence && (
+            <Link
+              href="/upload"
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-slate-800/20"
+            >
+              <Upload size={16} />
+              Upload Evidence
+            </Link>
+          )}
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* Total Cases */}
-        <Link href="/cases" className="group p-4 sm:p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-cyan-300 transition-all">
+        <Link href="/cases" className="group p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-cyan-300 transition-all">
           <div className="flex items-center justify-between">
-            <div className="size-8 sm:size-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              <Briefcase size={18} />
+            <div className="size-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <Briefcase size={20} />
             </div>
-            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active</span>
           </div>
-          <div className="mt-3 sm:mt-4">
-            <div className="text-2xl sm:text-3xl font-black font-mono text-slate-900">{stats.totalCases}</div>
-            <div className="text-[11px] sm:text-xs font-bold text-slate-500 mt-1">Total Case Files</div>
+          <div className="mt-4">
+            <div className="text-3xl font-black font-mono text-slate-900">{stats.totalCases}</div>
+            <div className="text-xs font-bold text-slate-500 mt-1">Total Case Files</div>
           </div>
         </Link>
 
         {/* Total Documents */}
-        <Link href="/documents" className="group p-4 sm:p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-cyan-300 transition-all">
+        <Link href="/documents" className="group p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-cyan-300 transition-all">
           <div className="flex items-center justify-between">
-            <div className="size-8 sm:size-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center font-bold">
-              <FileText size={18} />
+            <div className="size-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center font-bold">
+              <FileText size={20} />
             </div>
-            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Repository</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Repository</span>
           </div>
-          <div className="mt-3 sm:mt-4">
-            <div className="text-2xl sm:text-3xl font-black font-mono text-slate-900">{stats.totalDocuments}</div>
-            <div className="text-[11px] sm:text-xs font-bold text-slate-500 mt-1">Evidentiary Documents</div>
+          <div className="mt-4">
+            <div className="text-3xl font-black font-mono text-slate-900">{stats.totalDocuments}</div>
+            <div className="text-xs font-bold text-slate-500 mt-1">Evidentiary Documents</div>
           </div>
         </Link>
 
@@ -196,47 +206,87 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Right Column: Cryptographic Audit Trail (1 Col) */}
-        <div className="bg-[#18263b] rounded-2xl border border-slate-800 text-white shadow-sm overflow-hidden flex flex-col">
-          <div className="p-5 border-b border-white/10 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <History size={18} className="text-cyan-400" />
-              <h2 className="text-sm font-black uppercase tracking-wider text-white">
-                Audit Hash Chain
-              </h2>
+        {/* Right Column: Tailored by Role */}
+        {canViewAudit ? (
+          <div className="bg-[#18263b] rounded-2xl border border-slate-800 text-white shadow-sm overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <History size={18} className="text-cyan-400" />
+                <h2 className="text-sm font-black uppercase tracking-wider text-white">
+                  Audit Hash Chain
+                </h2>
+              </div>
+              <Link
+                href="/audit"
+                className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+              >
+                Verify <ArrowRight size={12} />
+              </Link>
             </div>
-            <Link
-              href="/audit"
-              className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
-            >
-              Verify <ArrowRight size={12} />
-            </Link>
-          </div>
 
-          <div className="p-4 flex-1 space-y-3 font-mono text-[11px]">
-            {(stats.recentAudits || []).slice(0, 4).map((audit, i) => (
-              <div key={audit.id || i} className="p-3 bg-slate-900/60 rounded-xl border border-white/5">
-                <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                  <span className="font-bold text-cyan-300 uppercase">{audit.action}</span>
-                  <span>{new Date(audit.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <div className="p-4 flex-1 space-y-3 font-mono text-[11px]">
+              {(stats.recentAudits || []).slice(0, 4).map((audit, i) => (
+                <div key={audit.id || i} className="p-3 bg-slate-900/60 rounded-xl border border-white/5">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                    <span className="font-bold text-cyan-300 uppercase">{audit.action}</span>
+                    <span>{new Date(audit.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <div className="text-xs text-slate-200 truncate">{audit.details}</div>
+                  <div className="mt-2 text-[9px] text-slate-400 truncate flex items-center gap-1">
+                    <span className="text-cyan-400">HASH:</span> {audit.eventHash || '0000000000...'}
+                  </div>
                 </div>
-                <div className="text-xs text-slate-200 truncate">{audit.details}</div>
-                <div className="mt-2 text-[9px] text-slate-400 truncate flex items-center gap-1">
-                  <span className="text-cyan-400">HASH:</span> {audit.eventHash || '0000000000...'}
+              ))}
+            </div>
+
+            <div className="p-4 bg-slate-900/80 border-t border-white/10 text-center">
+              <Link
+                href="/integrity"
+                className="w-full py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-xl text-xs font-bold inline-block transition-colors"
+              >
+                Launch Tamper Detector
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-[#18263b] rounded-2xl border border-slate-800 text-white shadow-sm overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={18} className="text-emerald-400" />
+                <h2 className="text-sm font-black uppercase tracking-wider text-white">
+                  Evidence Integrity Suite
+                </h2>
+              </div>
+            </div>
+
+            <div className="p-5 flex-1 space-y-4 text-xs">
+              <div className="p-4 bg-slate-900/60 rounded-xl border border-white/5 space-y-2">
+                <div className="text-[11px] font-bold text-cyan-300 uppercase">Cryptographic Verification</div>
+                <p className="text-slate-300 text-xs">
+                  All uploaded evidence documents are secured with automated SHA-256 ledger signatures.
+                </p>
+                <div className="text-[11px] text-emerald-400 font-mono font-bold">
+                  Status: 100% Tamper Proof
                 </div>
               </div>
-            ))}
-          </div>
 
-          <div className="p-4 bg-slate-900/80 border-t border-white/10 text-center">
-            <Link
-              href="/integrity"
-              className="w-full py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-xl text-xs font-bold inline-block transition-colors"
-            >
-              Launch Tamper Detector
-            </Link>
+              <div className="p-4 bg-slate-900/60 rounded-xl border border-white/5 space-y-1">
+                <div className="text-[11px] font-bold text-slate-400 uppercase">Your Role Access</div>
+                <div className="text-sm font-bold text-cyan-400">{user?.role}</div>
+                <div className="text-[10px] text-slate-400">Department: {user?.department || 'Investigation'}</div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-900/80 border-t border-white/10 text-center">
+              <Link
+                href="/integrity"
+                className="w-full py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-xl text-xs font-bold inline-block transition-colors"
+              >
+                Verify Document Hash
+              </Link>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

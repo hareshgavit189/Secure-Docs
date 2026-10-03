@@ -5,8 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { authService } from '../services/authService';
 
 export default function Login() {
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
+  const [identifier, setIdentifier] = useState('raj.patel@securedocs.gov');
+  const [password, setPassword] = useState('password123');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();

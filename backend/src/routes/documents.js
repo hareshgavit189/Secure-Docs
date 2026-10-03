@@ -4,8 +4,9 @@ import multer from 'multer';
 import { rateLimit } from 'express-rate-limit';
 import { SecureDocument } from '../models/Document.js';
 import { Case } from '../models/Case.js';
-import { recordAudit } from '../utils/audit.js';
-import { escapeRegex } from '../utils/escapeRegex.js';
+import { recordAudit } from '../lib/audit.js';
+import { escapeRegex } from '../lib/escapeRegex.js';
+import { authenticate, authorizeRoles } from '../middleware/auth.js';
 
 const router = Router();
 const upload = multer({
@@ -15,16 +16,16 @@ const upload = multer({
 
 const writeRouteLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 30,
+  limit: 60,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please retry shortly.' },
 });
 
 // -------------------------------------------------------------
-// GET /api/documents - List documents with filters
+// GET /api/documents - List documents with filters (Admin, Officer, Legal Reviewer, Auditor)
 // -------------------------------------------------------------
-router.get('/', async (req, res) => {
+router.get('/', authenticate, authorizeRoles('Admin', 'Officer', 'Legal Reviewer', 'Auditor'), async (req, res) => {
   try {
     const { search, caseId, type, status, integrity, confidentiality } = req.query;
     const query = {};
@@ -58,16 +59,16 @@ router.get('/', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// GET /api/documents/:id - Get document details
+// GET /api/documents/:id - Get document details (Admin, Officer, Legal Reviewer, Auditor)
 // -------------------------------------------------------------
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticate, authorizeRoles('Admin', 'Officer', 'Legal Reviewer', 'Auditor'), async (req, res) => {
   try {
     const { id } = req.params;
     const query = id.startsWith('SD-') ? { documentId: id } : { _id: id };
     const doc = await SecureDocument.findOneAndUpdate(
       query,
-      { $inc: { totalAccesses: 1 }, $set: { lastAccessed: new Date() } },
-      { new: true }
+      { $inc: { totalAccesses: 1 }, $set: { lastAccessed: new Date(), lastAccessedBy: req.user.name } },
+      { returnDocument: 'after' }
     ).lean();
 
     if (!doc) {
@@ -81,7 +82,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// POST /api/documents/upload - Upload new evidentiary document (CRUD: Create)
+// POST /api/documents/upload - Upload new evidentiary document (Admin, Officer only)
 // -------------------------------------------------------------
 const uploadDocument = async (req, res) => {
   try {
@@ -91,8 +92,6 @@ const uploadDocument = async (req, res) => {
       documentType = 'FIR',
       description = '',
       confidentiality = 'Confidential',
-      uploadedBy = 'Officer Raj Patel',
-      uploadedByRole = 'Officer',
     } = req.body;
 
     if (!caseId) {
@@ -136,8 +135,8 @@ const uploadDocument = async (req, res) => {
       size: fileSize,
       hash: calculatedHash,
       version: 1,
-      uploadedBy,
-      uploadedByRole,
+      uploadedBy: req.user.name,
+      uploadedByRole: req.user.role,
       status: 'Approved',
       integrity: 'Verified',
       confidentiality,
@@ -149,11 +148,12 @@ const uploadDocument = async (req, res) => {
 
     await recordAudit({
       action: 'DOCUMENT_UPLOADED',
+      userId: req.user.userId,
+      userName: req.user.name,
+      userRole: req.user.role,
       caseId: caseId.trim().toUpperCase(),
       documentId: docId,
-      details: `Evidentiary document "${finalDocName}" uploaded. SHA-256: ${calculatedHash.slice(0, 16)}...`,
-      userName: uploadedBy,
-      userRole: uploadedByRole,
+      details: `Evidentiary document "${finalDocName}" uploaded by ${req.user.name} (${req.user.role}). SHA-256: ${calculatedHash.slice(0, 16)}...`,
       result: 'Success',
     });
 
@@ -166,15 +166,15 @@ const uploadDocument = async (req, res) => {
   }
 };
 
-router.post('/upload', writeRouteLimiter, upload.single('file'), uploadDocument);
+router.post('/upload', authenticate, authorizeRoles('Admin', 'Officer'), writeRouteLimiter, upload.single('file'), uploadDocument);
 
 // Also support POST /api/documents as alias for upload
-router.post('/', writeRouteLimiter, upload.single('file'), uploadDocument);
+router.post('/', authenticate, authorizeRoles('Admin', 'Officer'), writeRouteLimiter, upload.single('file'), uploadDocument);
 
 // -------------------------------------------------------------
-// POST /api/documents/verify - Verify document cryptographic integrity
+// POST /api/documents/verify - Verify document cryptographic integrity (Admin, Officer, Legal Reviewer, Auditor)
 // -------------------------------------------------------------
-router.post('/verify', writeRouteLimiter, upload.single('file'), async (req, res) => {
+router.post('/verify', authenticate, authorizeRoles('Admin', 'Officer', 'Legal Reviewer', 'Auditor'), writeRouteLimiter, upload.single('file'), async (req, res) => {
   try {
     const { documentId, hash } = req.body;
     let targetDoc = null;
@@ -204,9 +204,12 @@ router.post('/verify', writeRouteLimiter, upload.single('file'), async (req, res
 
       await recordAudit({
         action: 'INTEGRITY_CHECK',
+        userId: req.user.userId,
+        userName: req.user.name,
+        userRole: req.user.role,
         caseId: targetDoc.caseId,
         documentId: targetDoc.documentId,
-        details: isMatch ? 'Cryptographic hash check PASSED' : 'Cryptographic hash MISMATCH detected! Possible tampering.',
+        details: isMatch ? `Cryptographic hash check PASSED by ${req.user.name} (${req.user.role})` : `Cryptographic hash MISMATCH detected by ${req.user.name}! Possible tampering.`,
         result: isMatch ? 'Success' : 'Failure',
       });
 
@@ -234,9 +237,9 @@ router.post('/verify', writeRouteLimiter, upload.single('file'), async (req, res
 });
 
 // -------------------------------------------------------------
-// GET /api/documents/:id/download - Download document content
+// GET /api/documents/:id/download - Download document content (Admin, Officer, Legal Reviewer, Auditor)
 // -------------------------------------------------------------
-router.get('/:id/download', async (req, res) => {
+router.get('/:id/download', authenticate, authorizeRoles('Admin', 'Officer', 'Legal Reviewer', 'Auditor'), async (req, res) => {
   try {
     const { id } = req.params;
     const query = id.startsWith('SD-') ? { documentId: id } : { _id: id };
@@ -262,9 +265,9 @@ router.get('/:id/download', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// DELETE /api/documents/:id - Delete document (CRUD: Delete)
+// DELETE /api/documents/:id - Delete document (Admin only)
 // -------------------------------------------------------------
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticate, authorizeRoles('Admin'), async (req, res) => {
   try {
     const { id } = req.params;
     const query = id.startsWith('SD-') ? { documentId: id } : { _id: id };
@@ -279,9 +282,12 @@ router.delete('/:id', async (req, res) => {
 
     await recordAudit({
       action: 'DOCUMENT_DELETED',
+      userId: req.user.userId,
+      userName: req.user.name,
+      userRole: req.user.role,
       caseId: doc.caseId,
       documentId: doc.documentId,
-      details: `Document "${doc.documentName}" (${doc.documentId}) deleted from case ${doc.caseId}`,
+      details: `Document "${doc.documentName}" (${doc.documentId}) deleted from case ${doc.caseId} by Admin ${req.user.name}`,
       result: 'Success',
     });
 

@@ -90,19 +90,14 @@ export default function Register() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Assigned Role
+                  Default Role
                 </label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-cyan-500 focus:bg-white"
-                >
-                  <option value="Officer">Officer</option>
-                  <option value="Admin">Admin</option>
-                  <option value="Legal Reviewer">Legal Reviewer</option>
-                  <option value="Auditor">Auditor</option>
-                  <option value="Clerk">Clerk</option>
-                </select>
+                <input
+                  type="text"
+                  disabled
+                  value="Officer"
+                  className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 cursor-not-allowed"
+                />
               </div>
 
               <div>

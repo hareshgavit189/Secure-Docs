@@ -14,13 +14,18 @@ import {
 } from 'lucide-react';
 import { caseService } from '../services/caseService';
 import { StatusBadge } from '../components/StatusBadge';
+import { useAuth } from '../context/AuthContext';
 
 export default function Cases() {
+  const { user } = useAuth();
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
+
+  const canCreateCase = ['Admin', 'Officer'].includes(user?.role);
+  const canDeleteCase = user?.role === 'Admin';
 
   const fetchCases = async () => {
     try {
@@ -45,6 +50,10 @@ export default function Cases() {
   const handleDelete = async (e, caseId) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!canDeleteCase) {
+      alert('Forbidden: Only Administrators can delete cases.');
+      return;
+    }
     if (!window.confirm(`Are you sure you want to delete case ${caseId} and its evidence?`)) {
       return;
     }
@@ -66,13 +75,15 @@ export default function Cases() {
             Active criminal, financial, cyber, and civil case dossiers
           </p>
         </div>
-        <Link
-          href="/cases/new"
-          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-cyan-600/20"
-        >
-          <Plus size={16} />
-          Register New Case
-        </Link>
+        {canCreateCase && (
+          <Link
+            href="/cases/new"
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-cyan-600/20"
+          >
+            <Plus size={16} />
+            Register New Case
+          </Link>
+        )}
       </div>
 
       {/* Filter & Search Bar */}
@@ -190,13 +201,15 @@ export default function Cases() {
                         >
                           <Eye size={15} />
                         </Link>
-                        <button
-                          onClick={(e) => handleDelete(e, c.caseId)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Delete Case"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        {canDeleteCase && (
+                          <button
+                            onClick={(e) => handleDelete(e, c.caseId)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete Case"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

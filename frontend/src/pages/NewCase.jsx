@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'wouter';
 import { ArrowLeft, Save, Briefcase, Shield, AlertCircle } from 'lucide-react';
 import { caseService } from '../services/caseService';
@@ -7,6 +7,12 @@ import { useAuth } from '../context/AuthContext';
 export default function NewCase() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (user && !['Admin', 'Officer'].includes(user.role)) {
+      setLocation('/dashboard');
+    }
+  }, [user]);
 
   const [formData, setFormData] = useState({
     caseId: `C-${Math.floor(1030 + Math.random() * 200)}`,

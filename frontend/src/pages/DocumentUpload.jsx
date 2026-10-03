@@ -29,6 +29,13 @@ export default function DocumentUpload() {
   const [error, setError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState(null);
 
+  // Role check
+  useEffect(() => {
+    if (user && !['Admin', 'Officer'].includes(user.role)) {
+      setLocation('/dashboard');
+    }
+  }, [user]);
+
   // Load existing cases for dropdown
   useEffect(() => {
     async function loadCases() {

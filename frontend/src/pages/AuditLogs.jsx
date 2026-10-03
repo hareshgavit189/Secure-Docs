@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'wouter';
 import {
   History,
   ShieldCheck,
@@ -11,8 +12,18 @@ import {
   Link as LinkIcon,
 } from 'lucide-react';
 import { auditService } from '../services/auditService';
+import { useAuth } from '../context/AuthContext';
 
 export default function AuditLogs() {
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (user && !['Admin', 'Auditor'].includes(user.role)) {
+      setLocation('/dashboard');
+    }
+  }, [user]);
+
   const [logs, setLogs] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
