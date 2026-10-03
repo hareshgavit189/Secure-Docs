@@ -4,8 +4,8 @@ import multer from 'multer';
 import { rateLimit } from 'express-rate-limit';
 import { SecureDocument } from '../models/Document.js';
 import { Case } from '../models/Case.js';
-import { recordAudit } from '../lib/audit.js';
-import { escapeRegex } from '../lib/escapeRegex.js';
+import { recordAudit } from '../utils/audit.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 
 const router = Router();
 const upload = multer({

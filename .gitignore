@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 .pnpm-store/
 
@@ -8,10 +8,16 @@ build/
 .next/
 out/
 
-# Environment
+# Environment (never commit secrets!)
 .env
 .env.local
 .env.*.local
+backend/.env
+frontend/.env
+# Allow example files
+!.env.example
+!backend/.env.example
+!frontend/.env.example
 
 # Logs
 npm-debug.log*

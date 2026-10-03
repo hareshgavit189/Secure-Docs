@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { AuditLog } from '../models/AuditLog.js';
-import { escapeRegex } from '../lib/escapeRegex.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 
 const router = Router();
 

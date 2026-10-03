@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { Case } from '../models/Case.js';
 import { SecureDocument } from '../models/Document.js';
-import { recordAudit } from '../lib/audit.js';
-import { escapeRegex } from '../lib/escapeRegex.js';
+import { recordAudit } from '../utils/audit.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
