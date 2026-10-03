@@ -31,7 +31,7 @@ function SidebarNav({ onClose }) {
   );
 
   return (
-    <div className="flex flex-col h-full bg-[#18263b] text-slate-300 select-none">
+    <div className="w-64 min-w-[16rem] h-full flex flex-col bg-[#18263b] text-slate-300 select-none">
       {/* ── Brand Header ── */}
       <div className="h-16 flex items-center justify-between px-5 border-b border-white/10 bg-[#121c2d] shrink-0">
         <div className="flex items-center gap-3">
@@ -52,7 +52,7 @@ function SidebarNav({ onClose }) {
         {onClose && (
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 lg:hidden transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 lg:hidden transition-colors cursor-pointer"
             aria-label="Close menu"
           >
             <X size={20} />
@@ -107,7 +107,7 @@ export function Sidebar({ isDesktopOpen, isMobileOpen, onCloseMobile }) {
         className={`
           hidden lg:block shrink-0 overflow-hidden
           transition-[width] duration-300 ease-in-out
-          bg-[#18263b] border-r border-slate-800 sticky top-0 h-screen
+          bg-[#18263b] border-r border-slate-800 sticky top-0 h-screen z-30
           ${isDesktopOpen ? 'w-64' : 'w-0 border-r-0'}
         `}
       >
@@ -127,4 +127,5 @@ export function Sidebar({ isDesktopOpen, isMobileOpen, onCloseMobile }) {
     </>
   );
 }
+
 
