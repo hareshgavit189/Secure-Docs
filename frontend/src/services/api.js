@@ -74,6 +74,77 @@ export const api = {
     });
     return handleResponse(res);
   },
+
+  uploadWithProgress: (endpoint, formData, onProgress) => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      let lastLoaded = 0;
+      let lastTime = Date.now();
+
+      xhr.open('POST', `${API_BASE}${endpoint}`, true);
+
+      // Add auth headers
+      const token = localStorage.getItem('securedocs_token');
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+      xhr.setRequestHeader('Accept', 'application/json');
+
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const currentTime = Date.now();
+            const timeDiff = (currentTime - lastTime) / 1000; // in seconds
+            let speed = 0;
+            if (timeDiff > 0.2) {
+              speed = (e.loaded - lastLoaded) / timeDiff; // bytes per second
+              lastLoaded = e.loaded;
+              lastTime = currentTime;
+            }
+
+            const percent = Math.min(100, Math.round((e.loaded / e.total) * 100));
+            onProgress({
+              loaded: e.loaded,
+              total: e.total,
+              percent,
+              speed, // bytes/sec
+            });
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        try {
+          const contentType = xhr.getResponseHeader('Content-Type') || '';
+          const response = contentType.includes('application/json')
+            ? JSON.parse(xhr.responseText)
+            : { message: xhr.responseText };
+
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(response);
+          } else {
+            const errMsg = response.error || response.message || `Upload failed (${xhr.status})`;
+            reject(new ApiError(xhr.status, errMsg));
+          }
+        } catch (err) {
+          reject(new ApiError(xhr.status, err.message || 'Error parsing server response'));
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new ApiError(0, 'Network connection interrupted during upload. Check server connection.'));
+      };
+
+      xhr.ontimeout = () => {
+        reject(new ApiError(408, 'Upload request timed out.'));
+      };
+
+      // Set timeout to 0 (no client-side xhr timeout)
+      xhr.timeout = 0;
+
+      xhr.send(formData);
+    });
+  },
 };
 
 export function getApiUrl(endpoint) {

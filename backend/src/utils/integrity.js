@@ -152,3 +152,42 @@ export function computeUploadIntegrity(buffer) {
     hmac:   computeHMAC(buffer),
   };
 }
+
+/**
+ * Streaming SHA-256 and HMAC-SHA-256 calculation for disk files of any size (up to multi-GB).
+ * Uses constant memory (~64 KB) by streaming chunks directly into hash digests.
+ *
+ * @param {string} filePath - Absolute path to file on disk
+ * @returns {Promise<{ sha256: string, hmac: string }>}
+ */
+export function computeFileIntegrityStream(filePath) {
+  return new Promise((resolve, reject) => {
+    import('node:fs').then(({ createReadStream }) => {
+      let hmacCalculator = null;
+      try {
+        const secret = getHmacSecret();
+        hmacCalculator = crypto.createHmac('sha256', secret);
+      } catch (err) {
+        console.warn('⚠️ HMAC calculation skipped in stream:', err.message);
+      }
+
+      const shaCalculator = crypto.createHash('sha256');
+      const readStream = createReadStream(filePath);
+
+      readStream.on('data', (chunk) => {
+        shaCalculator.update(chunk);
+        if (hmacCalculator) hmacCalculator.update(chunk);
+      });
+
+      readStream.on('end', () => {
+        resolve({
+          sha256: shaCalculator.digest('hex'),
+          hmac:   hmacCalculator ? hmacCalculator.digest('hex') : '',
+        });
+      });
+
+      readStream.on('error', (err) => reject(err));
+    });
+  });
+}
+

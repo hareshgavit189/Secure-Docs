@@ -8,10 +8,26 @@ import {
   CheckCircle2,
   AlertCircle,
   FileCheck2,
+  Activity,
+  HardDrive,
+  Cpu,
 } from 'lucide-react';
 import { documentService } from '../services/documentService';
 import { caseService } from '../services/caseService';
 import { useAuth } from '../context/AuthContext';
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+}
+
+function formatSpeed(bytesPerSec) {
+  if (!bytesPerSec || bytesPerSec === 0) return 'Calculating...';
+  return `${formatBytes(bytesPerSec)}/s`;
+}
 
 export default function DocumentUpload() {
   const { user } = useAuth();
@@ -28,6 +44,15 @@ export default function DocumentUpload() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState(null);
+
+  // Upload Progress Tracking
+  const [progress, setProgress] = useState({
+    percent: 0,
+    loaded: 0,
+    total: 0,
+    speed: 0,
+    statusText: '',
+  });
 
   // Role check
   useEffect(() => {
@@ -53,7 +78,7 @@ export default function DocumentUpload() {
     loadCases();
   }, []);
 
-  // Compute SHA-256 client side when a file is selected (streaming for multi-GB)
+  // Compute SHA-256 client side when a file is selected (for small files)
   const handleFileChange = async (e) => {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -64,7 +89,7 @@ export default function DocumentUpload() {
     }
 
     // For files <= 64 MB, calculate hash immediately in browser
-    // For files > 64 MB (e.g. 1GB+), server stream hash calculation prevents browser tab memory limits
+    // For files > 64 MB (e.g. 1GB+), high-speed server stream hash calculation prevents browser tab crashes
     if (selectedFile.size <= 64 * 1024 * 1024) {
       try {
         const arrayBuffer = await selectedFile.arrayBuffer();
@@ -76,8 +101,8 @@ export default function DocumentUpload() {
         console.warn('Browser crypto calculation notice:', err);
       }
     } else {
-      const sizeGB = (selectedFile.size / (1024 * 1024 * 1024)).toFixed(2);
-      setClientHash(`Large Evidence File (${sizeGB} GB) — High-throughput server-side streaming SHA-256 calculation & GridFS chunking active`);
+      const sizeFormatted = formatBytes(selectedFile.size);
+      setClientHash(`Multi-GB Evidence (${sizeFormatted}) — High-throughput streaming SHA-256 + HMAC-SHA-256 & GridFS chunking active`);
     }
   };
 
@@ -95,6 +120,14 @@ export default function DocumentUpload() {
     }
 
     setLoading(true);
+    setProgress({
+      percent: 0,
+      loaded: 0,
+      total: file ? file.size : 0,
+      speed: 0,
+      statusText: 'Initializing secure upload pipeline...',
+    });
+
     try {
       const formData = new FormData();
       formData.append('caseId', caseId);
@@ -106,7 +139,20 @@ export default function DocumentUpload() {
       formData.append('uploadedByRole', user?.role || 'Officer');
       if (file) formData.append('file', file);
 
-      const res = await documentService.uploadDocument(formData);
+      const res = await documentService.uploadDocument(formData, (prog) => {
+        let status = 'Uploading evidence stream to server...';
+        if (prog.percent === 100) {
+          status = 'Calculating SHA-256 + HMAC-SHA-256 & sealing in MongoDB GridFS...';
+        }
+        setProgress({
+          percent: prog.percent,
+          loaded: prog.loaded,
+          total: prog.total,
+          speed: prog.speed,
+          statusText: status,
+        });
+      });
+
       setUploadSuccess(res.data);
     } catch (err) {
       setError(err.message || 'Failed to upload document');
@@ -154,6 +200,10 @@ export default function DocumentUpload() {
               <span className="text-slate-400">Document Name:</span>{' '}
               <span className="font-bold text-slate-800">{uploadSuccess.documentName}</span>
             </div>
+            <div>
+              <span className="text-slate-400">File Size:</span>{' '}
+              <span className="font-bold text-slate-800">{formatBytes(uploadSuccess.size)}</span>
+            </div>
             <div className="break-all pt-2 border-t border-slate-200">
               <span className="text-slate-400 block mb-1 font-sans font-bold text-[10px] uppercase tracking-wider">
                 Cryptographic SHA-256 Signature:
@@ -171,6 +221,7 @@ export default function DocumentUpload() {
                 setFile(null);
                 setDocumentName('');
                 setClientHash('');
+                setProgress({ percent: 0, loaded: 0, total: 0, speed: 0, statusText: '' });
               }}
               className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
             >
@@ -186,112 +237,169 @@ export default function DocumentUpload() {
         </div>
       ) : (
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-6 bg-slate-50/60 border-b border-slate-100 flex items-center gap-3">
-            <div className="size-10 rounded-xl bg-cyan-600 text-white flex items-center justify-center font-bold shadow-md shadow-cyan-600/20">
-              <Upload size={20} />
+          <div className="p-6 bg-slate-50/60 border-b border-slate-100 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="size-10 rounded-xl bg-cyan-600 text-white flex items-center justify-center font-bold shadow-md shadow-cyan-600/20">
+                <Upload size={20} />
+              </div>
+              <div>
+                <h1 className="text-lg font-black text-slate-900">Upload Evidentiary Record</h1>
+                <p className="text-xs text-slate-400">
+                  Supports Multi-GB file streaming (up to 5 GB) via MongoDB GridFS
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-black text-slate-900">Upload Evidentiary Record</h1>
-              <p className="text-xs text-slate-400">
-                Upload files with automated client & server SHA-256 tamper-proofing
-              </p>
-            </div>
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 bg-cyan-50 text-cyan-700 border border-cyan-200/60 rounded-full text-[11px] font-bold">
+              <HardDrive size={13} /> Multi-GB Capable
+            </span>
           </div>
 
-          <div className="p-6 md:p-8">
+          <div className="p-6 md:p-8 space-y-6">
             {error && (
-              <div className="mb-6 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-                <AlertCircle size={16} className="shrink-0 text-red-600" />
+              <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-xs text-red-700 font-bold animate-shake">
+                <AlertCircle size={16} className="shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-5">
+            {/* LIVE UPLOAD PROGRESS BAR */}
+            {loading && (
+              <div className="p-5 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl text-white shadow-xl space-y-4 border border-slate-700 animate-fadeIn">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <Activity size={16} className="text-cyan-400 animate-pulse" />
+                    <span className="font-bold tracking-wide text-cyan-300">
+                      {progress.statusText || 'Uploading Evidence...'}
+                    </span>
+                  </div>
+                  <span className="font-mono text-base font-black text-cyan-400">
+                    {progress.percent}%
+                  </span>
+                </div>
+
+                {/* Animated Progress Bar */}
+                <div className="w-full bg-slate-700/80 rounded-full h-3.5 overflow-hidden p-0.5 border border-slate-600 relative">
+                  <div
+                    className="bg-gradient-to-r from-cyan-500 via-teal-400 to-emerald-400 h-full rounded-full transition-all duration-300 ease-out relative overflow-hidden"
+                    style={{ width: `${Math.max(2, progress.percent)}%` }}
+                  >
+                    <div className="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)] bg-[length:200%_100%]" />
+                  </div>
+                </div>
+
+                {/* Progress Details Metrics */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] font-mono text-slate-300 pt-1 border-t border-slate-700/60">
+                  <div>
+                    <span className="text-slate-400 text-[10px] block">TRANSFERRED</span>
+                    <span className="font-bold text-white">
+                      {formatBytes(progress.loaded)} / {formatBytes(progress.total)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[10px] block">UPLOAD SPEED</span>
+                    <span className="font-bold text-cyan-300">
+                      {formatSpeed(progress.speed)}
+                    </span>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <span className="text-slate-400 text-[10px] block">STORAGE ENGINE</span>
+                    <span className="font-bold text-emerald-400 flex items-center gap-1">
+                      <Cpu size={12} /> MongoDB GridFS
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-6">
               {/* File Dropzone */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  Select Evidence File
+                  Evidence File Attachment
                 </label>
-                <div className="border-2 border-dashed border-slate-300 hover:border-cyan-500 rounded-2xl p-6 text-center bg-slate-50/50 hover:bg-cyan-50/30 transition-all cursor-pointer relative">
+                <div className="border-2 border-dashed border-slate-300 hover:border-cyan-500 rounded-2xl p-8 text-center bg-slate-50/50 hover:bg-cyan-50/30 transition-all cursor-pointer relative">
                   <input
                     type="file"
+                    disabled={loading}
                     onChange={handleFileChange}
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
                   />
-                  <FileCheck2 size={36} className="mx-auto text-cyan-600 mb-2" />
+                  <FileCheck2 size={40} className="mx-auto text-cyan-600 mb-2" />
                   <div className="text-xs font-bold text-slate-700">
-                    {file ? file.name : 'Click to browse or drag file here'}
+                    {file ? file.name : 'Drag & drop evidence file or browse computer'}
                   </div>
                   <div className="text-[10px] text-slate-400 mt-1">
-                    Accepts any file format (PDF, DOCX, ZIP, PCAP, ISO, MP4, Scans — Supports Multi-GB up to 5 GB via GridFS)
+                    Supports all formats: PDF, DOCX, Video recordings, High-Res Scans, Forensic Archives (Up to 5 GB)
                   </div>
-                </div>
-
-                {clientHash && (
-                  <div className="mt-2.5 p-3 bg-cyan-50 border border-cyan-200 rounded-xl text-xs font-mono break-all">
-                    <span className="text-[10px] font-bold text-cyan-800 uppercase block font-sans mb-0.5">
-                      Client-Computed SHA-256 Hash:
-                    </span>
-                    <span className="text-cyan-900 font-bold">{clientHash}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Case & Name */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Associated Case ID
-                  </label>
-                  {availableCases.length > 0 ? (
-                    <select
-                      value={caseId}
-                      onChange={(e) => setCaseId(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-cyan-500"
-                    >
-                      {availableCases.map((c) => (
-                        <option key={c.caseId} value={c.caseId}>
-                          {c.caseId} - {c.title.slice(0, 30)}...
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      required
-                      value={caseId}
-                      onChange={(e) => setCaseId(e.target.value)}
-                      placeholder="e.g. C-1024"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-bold"
-                    />
+                  {file && (
+                    <div className="mt-2 inline-block px-3 py-1 bg-cyan-100 text-cyan-800 rounded-full text-[11px] font-mono font-bold">
+                      Size: {formatBytes(file.size)}
+                    </div>
                   )}
                 </div>
+              </div>
+
+              {/* Client Hash Info */}
+              {clientHash && (
+                <div className="p-4 bg-cyan-50/60 border border-cyan-200 rounded-2xl flex items-start gap-3">
+                  <Shield size={18} className="text-cyan-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="text-xs font-bold text-cyan-900">
+                      Integrity Fingerprint Pipeline
+                    </div>
+                    <div className="text-[11px] font-mono text-cyan-800 break-all leading-tight">
+                      {clientHash}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Case & Doc Name */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Select Case Dossier *
+                  </label>
+                  <select
+                    disabled={loading}
+                    value={caseId}
+                    onChange={(e) => setCaseId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-cyan-500 disabled:opacity-50"
+                  >
+                    {availableCases.map((c) => (
+                      <option key={c.caseId} value={c.caseId}>
+                        {c.caseId} - {c.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Document Title / Designation
+                    Document Title *
                   </label>
                   <input
                     type="text"
-                    required
+                    disabled={loading}
                     value={documentName}
                     onChange={(e) => setDocumentName(e.target.value)}
-                    placeholder="e.g. Bank Statement Reconciliation"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500"
+                    placeholder="e.g. Crime Scene Forensic Analysis Part 1"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-cyan-500 disabled:opacity-50"
                   />
                 </div>
               </div>
 
-              {/* Classification & Confidentiality */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Document Type & Confidentiality */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Document Category
                   </label>
                   <select
+                    disabled={loading}
                     value={documentType}
                     onChange={(e) => setDocumentType(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-cyan-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-cyan-500 disabled:opacity-50"
                   >
                     <option value="FIR">FIR (First Information Report)</option>
                     <option value="Forensic Report">Forensic Report</option>
@@ -308,9 +416,10 @@ export default function DocumentUpload() {
                     Confidentiality Grading
                   </label>
                   <select
+                    disabled={loading}
                     value={confidentiality}
                     onChange={(e) => setConfidentiality(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-cyan-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-cyan-500 disabled:opacity-50"
                   >
                     <option value="Public/Internal">Public / Internal</option>
                     <option value="Confidential">Confidential</option>
@@ -327,10 +436,11 @@ export default function DocumentUpload() {
                 </label>
                 <textarea
                   rows={3}
+                  disabled={loading}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Record handling officer remarks, seizure location, or relevant context..."
-                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500"
+                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50"
                 />
               </div>
 
@@ -348,7 +458,7 @@ export default function DocumentUpload() {
                   className="flex items-center gap-2 px-6 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-cyan-600/20 disabled:opacity-50"
                 >
                   <Upload size={16} />
-                  {loading ? 'Encrypting & Uploading...' : 'Upload & Compute Hash'}
+                  {loading ? 'Streaming & Sealing Evidence...' : 'Upload & Compute Hash'}
                 </button>
               </div>
             </form>

@@ -72,6 +72,12 @@ export async function startServer() {
       console.log(`===============================================\n`);
     });
 
+    // Configure server timeouts to prevent 5-minute socket drops on multi-GB uploads
+    server.timeout = 0; // Disable idle timeout
+    server.requestTimeout = 0; // Disable 5-min (300,000ms) request timeout in Node.js 18+
+    server.keepAliveTimeout = 120000; // 2 minutes
+    server.headersTimeout = 130000; // > keepAliveTimeout
+
     return server;
   } catch (err) {
     console.error('❌ Failed to start server:', err.message);

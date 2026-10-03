@@ -95,8 +95,12 @@ const documentSchema = new mongoose.Schema(
       default: 'Confidential',
     },
     fileData: {
-      type: String,   // Base64-encoded file content
+      type: String,   // Base64-encoded file content (for legacy/demo documents)
       default: '',
+    },
+    gridFsFileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,  // GridFS storage reference for multi-GB binary streams
     },
     totalAccesses: {
       type: Number,

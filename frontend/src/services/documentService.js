@@ -16,11 +16,17 @@ export const documentService = {
     return api.get(`/documents/${id}`);
   },
 
-  uploadDocument: async (formData) => {
+  uploadDocument: async (formData, onProgress) => {
+    if (onProgress || formData instanceof FormData) {
+      return api.uploadWithProgress('/documents/upload', formData, onProgress);
+    }
     return api.post('/documents/upload', formData);
   },
 
-  verifyDocument: async (verificationData) => {
+  verifyDocument: async (verificationData, onProgress) => {
+    if (verificationData instanceof FormData) {
+      return api.uploadWithProgress('/documents/verify', verificationData, onProgress);
+    }
     return api.post('/documents/verify', verificationData);
   },
 

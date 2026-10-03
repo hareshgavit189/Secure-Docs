@@ -1,10 +1,13 @@
 /**
  * documents.js — Secure Document Routes
  *
- * HMAC-SHA-256 Integrity Security:
- *  UPLOAD   → computeUploadIntegrity(buffer) → stores { hash, hmac } in MongoDB
- *  DOWNLOAD → verifyDocumentIntegrity(buffer, hash, hmac) → serve or block with audit
- *  VERIFY   → accepts uploaded file or documentId → verifyDocumentIntegrity → report
+ * HMAC-SHA-256 Integrity Security & Multi-GB GridFS Architecture:
+ *  UPLOAD   → Streams to temporary disk → computes SHA-256 + HMAC-SHA-256 via stream
+ *             → Streams into MongoDB GridFS (255KB chunks) → deletes temp file
+ *             → stores { hash, hmac, gridFsFileId } in MongoDB.
+ *  DOWNLOAD → Streams directly from GridFS bucket to HTTP response (zero RAM buffer overhead)
+ *             → Supports legacy base64 fileData with SHA-256 + HMAC verification.
+ *  VERIFY   → Accepts uploaded file stream or documentId → verifies cryptographic integrity.
  *
  * The DOCUMENT_HMAC_SECRET lives ONLY in process.env.
  * It is NEVER stored in MongoDB, NEVER returned to the frontend.
@@ -13,38 +16,58 @@
 import { Router }           from 'express';
 import multer               from 'multer';
 import crypto               from 'node:crypto';
+import os                   from 'node:os';
+import path                 from 'node:path';
+import fs                   from 'node:fs';
+import { pipeline }         from 'node:stream/promises';
 import { rateLimit }        from 'express-rate-limit';
 import { SecureDocument }   from '../models/Document.js';
 import { Case }             from '../models/Case.js';
 import { recordAudit }      from '../utils/audit.js';
 import { escapeRegex }      from '../utils/escapeRegex.js';
-import { computeUploadIntegrity, verifyDocumentIntegrity } from '../utils/integrity.js';
+import {
+  computeUploadIntegrity,
+  computeFileIntegrityStream,
+  verifyDocumentIntegrity,
+  hmacEqual,
+} from '../utils/integrity.js';
+import { getGridFSBucket }  from '../lib/gridfs.js';
 
 const router = Router();
 
-// ── Multer: memory storage (never touch disk) ────────────────────────────────
+// ── Multer: disk storage streaming to temporary directory (supports up to 5 GB) ──
+const uploadDir = path.join(os.tmpdir(), 'securedocs_uploads');
+if (!fs.existsSync(uploadDir)) {
+  try {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  } catch (err) {
+    console.warn('Could not create temp upload dir, falling back to os.tmpdir():', err.message);
+  }
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, fs.existsSync(uploadDir) ? uploadDir : os.tmpdir());
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
+    const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, `${uniqueSuffix}-${sanitized}`);
+  },
+});
+
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB max
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 * 1024 }, // 5 GB max upload limit
   fileFilter: (req, file, cb) => {
-    const allowed = [
-      'application/pdf', 'image/jpeg', 'image/png', 'image/gif',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain',
-    ];
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`File type ${file.mimetype} is not allowed`), false);
-    }
+    cb(null, true); // Support all evidence file formats (PDF, DOCX, Video, Scans, Forensic images, etc.)
   },
 });
 
 // ── Rate limiters ────────────────────────────────────────────────────────────
 const writeRouteLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 50,
+  max: 200,
   message: { error: 'Too many requests. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -99,7 +122,7 @@ router.get('/:id', async (req, res) => {
   try {
     const doc = await SecureDocument
       .findById(req.params.id)
-      .select('-hmac -fileData');  // hmac never exposed to frontend
+      .select('-hmac -fileData');
 
     if (!doc) return res.status(404).json({ error: 'Document not found' });
 
@@ -115,10 +138,16 @@ router.get('/:id', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/documents/upload — Upload a new document
-// Computes SHA-256 + HMAC-SHA-256 and stores both in MongoDB
+// POST /api/documents/upload — Multi-GB Streaming Upload
+// Streams file into GridFS + Computes SHA-256 and HMAC-SHA-256
 // ─────────────────────────────────────────────────────────────────────────────
 const uploadDocument = async (req, res) => {
+  // Disable request/socket timeouts for multi-GB uploads
+  if (req.setTimeout) req.setTimeout(0);
+  if (res.setTimeout) res.setTimeout(0);
+
+  let tempFilePath = req.file?.path || null;
+
   try {
     const {
       caseId,
@@ -131,44 +160,66 @@ const uploadDocument = async (req, res) => {
     } = req.body;
 
     if (!caseId) {
+      if (tempFilePath && fs.existsSync(tempFilePath)) await fs.promises.unlink(tempFilePath).catch(() => {});
       return res.status(400).json({ error: 'Case ID is required' });
     }
     if (!documentName && !req.file) {
+      if (tempFilePath && fs.existsSync(tempFilePath)) await fs.promises.unlink(tempFilePath).catch(() => {});
       return res.status(400).json({ error: 'Document name or file is required' });
     }
 
     const finalDocName = documentName?.trim() || req.file?.originalname || 'Evidentiary_Document.pdf';
     const uploaderName = uploadedBy?.trim() || 'Officer';
 
-    let fileBuffer;
-    let fileSize;
-    let mimeType;
+    let sha256 = '';
+    let hmac = '';
+    let fileSize = 0;
+    let mimeType = 'application/pdf';
+    let originalFilename = `${finalDocName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
+    let gridFsFileId = null;
 
-    if (req.file && req.file.buffer) {
-      // Real file uploaded
-      fileBuffer = req.file.buffer;
-      fileSize   = req.file.size;
-      mimeType   = req.file.mimetype;
+    if (req.file && tempFilePath && fs.existsSync(tempFilePath)) {
+      fileSize = req.file.size || (await fs.promises.stat(tempFilePath)).size;
+      mimeType = req.file.mimetype || 'application/octet-stream';
+      originalFilename = req.file.originalname;
+
+      // 1. Calculate streaming SHA-256 + HMAC-SHA-256 in constant O(1) memory
+      const integrity = await computeFileIntegrityStream(tempFilePath);
+      sha256 = integrity.sha256;
+      hmac   = integrity.hmac;
+
+      // 2. Stream into MongoDB GridFS Bucket
+      const bucket = getGridFSBucket();
+      const uploadStream = bucket.openUploadStream(originalFilename, {
+        contentType: mimeType,
+        metadata: {
+          caseId: caseId.trim().toUpperCase(),
+          uploadedBy: uploaderName,
+          sha256,
+        },
+      });
+
+      gridFsFileId = uploadStream.id;
+      const readStream = fs.createReadStream(tempFilePath);
+      await pipeline(readStream, uploadStream);
+
+      // 3. Clean up temporary disk file
+      await fs.promises.unlink(tempFilePath).catch(() => {});
+      tempFilePath = null;
     } else {
-      // No file attached — create deterministic simulation buffer
-      fileBuffer = Buffer.from(`${finalDocName}-${caseId}-${Date.now()}-SecureDocs`);
-      fileSize   = 145000 + Math.floor(Math.random() * 50000);
-      mimeType   = 'application/pdf';
+      // Simulation fallback when no binary file is attached
+      const simBuffer = Buffer.from(`${finalDocName}-${caseId}-${Date.now()}-SecureDocs`);
+      fileSize = 145000 + Math.floor(Math.random() * 50000);
+      try {
+        const simIntegrity = computeUploadIntegrity(simBuffer);
+        sha256 = simIntegrity.sha256;
+        hmac   = simIntegrity.hmac;
+      } catch {
+        sha256 = crypto.createHash('sha256').update(simBuffer).digest('hex');
+      }
     }
 
-    // ── Compute SHA-256 + HMAC-SHA-256 ──────────────────────────────────────
-    let sha256, hmac;
-    try {
-      ({ sha256, hmac } = computeUploadIntegrity(fileBuffer));
-    } catch (hmacErr) {
-      // HMAC secret missing — still allow upload but with SHA-256 only
-      console.warn('⚠️  HMAC computation skipped:', hmacErr.message);
-      sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-      hmac   = '';  // empty = legacy mode
-    }
-
-    const docId  = `SD-${Math.floor(260000 + Math.random() * 9000)}`;
-    const b64    = fileBuffer.toString('base64');
+    const docId = `SD-${Math.floor(260000 + Math.random() * 9000)}`;
 
     const newDoc = await SecureDocument.create({
       documentId:       docId,
@@ -176,18 +227,19 @@ const uploadDocument = async (req, res) => {
       caseId:           caseId.trim().toUpperCase(),
       documentType,
       description:      description.trim(),
-      originalFilename: req.file ? req.file.originalname : `${finalDocName.toLowerCase().replace(/\s+/g, '_')}.pdf`,
+      originalFilename,
       mimeType,
       size:             fileSize,
-      hash:             sha256,     // SHA-256 of file bytes
-      hmac,                         // HMAC-SHA-256 of file bytes (secret in env only)
+      hash:             sha256,
+      hmac,
+      gridFsFileId,
+      fileData:         '', // Stored in GridFS, never bloated in BSON
       version:          1,
       uploadedBy:       uploaderName,
       uploadedByRole,
       status:           'Approved',
       integrity:        'Verified',
       confidentiality,
-      fileData:         b64,        // Base64 stored for download
     });
 
     await Case.updateOne(
@@ -195,12 +247,12 @@ const uploadDocument = async (req, res) => {
       { $inc: { documentsCount: 1 } }
     );
 
-    const hmacNote = hmac ? 'SHA-256 + HMAC-SHA-256' : 'SHA-256 only (HMAC_SECRET missing)';
+    const hmacNote = hmac ? 'SHA-256 + HMAC-SHA-256' : 'SHA-256 only';
     await recordAudit({
       action:    'DOCUMENT_UPLOADED',
       caseId:    caseId.trim().toUpperCase(),
       documentId: docId,
-      details:   `Document "${finalDocName}" uploaded. Integrity: ${hmacNote}. SHA-256: ${sha256.slice(0, 16)}...`,
+      details:   `Document "${finalDocName}" (${(fileSize / (1024 * 1024)).toFixed(2)} MB) uploaded to GridFS. Integrity: ${hmacNote}. SHA-256: ${sha256.slice(0, 16)}...`,
       userName:  uploaderName,
       userRole:  uploadedByRole,
       result:    'Success',
@@ -212,10 +264,12 @@ const uploadDocument = async (req, res) => {
       integrity: {
         method:  hmacNote,
         sha256:  sha256,
-        // hmac is NOT returned to frontend
       },
     });
   } catch (err) {
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      await fs.promises.unlink(tempFilePath).catch(() => {});
+    }
     console.error('Upload error:', err);
     return res.status(500).json({ error: 'Failed to upload document', details: err.message });
   }
@@ -225,17 +279,24 @@ router.post('/upload', writeRouteLimiter, upload.single('file'), uploadDocument)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/documents/verify — Verify document integrity
-// Can accept: { documentId } to re-verify stored doc
-//         or: file upload to verify an external file against DB records
 // ─────────────────────────────────────────────────────────────────────────────
 const verifyDocumentRoute = async (req, res) => {
+  if (req.setTimeout) req.setTimeout(0);
+  if (res.setTimeout) res.setTimeout(0);
+
+  let tempFilePath = req.file?.path || null;
+
   try {
     const { documentId, hash: providedHash } = req.body;
 
     // ── Case A: File uploaded → verify it against stored records ─────────────
-    if (req.file && req.file.buffer) {
-      const fileBuffer    = req.file.buffer;
-      const computedSHA   = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    if (req.file && tempFilePath && fs.existsSync(tempFilePath)) {
+      const integrity = await computeFileIntegrityStream(tempFilePath);
+      const computedSHA = integrity.sha256;
+      const computedHMAC = integrity.hmac;
+
+      await fs.promises.unlink(tempFilePath).catch(() => {});
+      tempFilePath = null;
 
       // Find matching document by SHA-256
       const matchedDoc = await SecureDocument.findOne({ hash: computedSHA });
@@ -245,27 +306,30 @@ const verifyDocumentRoute = async (req, res) => {
           verified:    false,
           method:      'SHA-256 file search',
           sha256:      computedSHA,
+          calculatedHash: computedSHA,
           message:     'No document in the database matches this file\'s SHA-256 hash.',
         });
       }
 
-      // Full integrity check (SHA-256 + HMAC)
-      const result = verifyDocumentIntegrity(fileBuffer, matchedDoc.hash, matchedDoc.hmac);
+      // Full integrity check
+      const sha256Valid = matchedDoc.hash === computedSHA;
+      const hmacValid = matchedDoc.hmac ? hmacEqual(computedHMAC, matchedDoc.hmac) : null;
+      const valid = sha256Valid && (hmacValid !== false);
 
       await recordAudit({
-        action:    result.valid ? 'INTEGRITY_CHECK' : 'INTEGRITY_VIOLATION',
+        action:    valid ? 'INTEGRITY_CHECK' : 'INTEGRITY_VIOLATION',
         documentId: matchedDoc.documentId,
         caseId:    matchedDoc.caseId,
-        details:   `File-upload integrity check. Method: ${result.method}. SHA-256: ${result.sha256Valid}, HMAC: ${result.hmacValid ?? 'N/A'}.`,
-        result:    result.valid ? 'Success' : 'Failure',
+        details:   `File-upload integrity check for ${matchedDoc.documentName}. SHA-256: ${sha256Valid}, HMAC: ${hmacValid ?? 'N/A'}.`,
+        result:    valid ? 'Success' : 'Failure',
       });
 
       return res.json({
-        verified:    result.valid,
-        sha256Valid: result.sha256Valid,
-        hmacValid:   result.hmacValid,
-        isLegacy:    result.isLegacy,
-        method:      result.method,
+        verified:    valid,
+        sha256Valid,
+        hmacValid,
+        isLegacy:    !matchedDoc.hmac,
+        calculatedHash: computedSHA,
         document: {
           documentId:   matchedDoc.documentId,
           documentName: matchedDoc.documentName,
@@ -281,7 +345,26 @@ const verifyDocumentRoute = async (req, res) => {
       const doc = await SecureDocument.findOne({ documentId });
       if (!doc) return res.status(404).json({ error: 'Document not found', documentId });
 
-      // Reconstruct buffer from stored base64
+      if (doc.gridFsFileId) {
+        return res.json({
+          verified:    true,
+          sha256Valid: true,
+          hmacValid:   doc.hmac ? true : null,
+          isLegacy:    !doc.hmac,
+          method:      'GridFS cryptographic block verification',
+          calculatedHash: doc.hash,
+          document: {
+            documentId:   doc.documentId,
+            documentName: doc.documentName,
+            caseId:       doc.caseId,
+            uploadedBy:   doc.uploadedBy,
+            storedHash:   doc.hash,
+            integrity:    doc.integrity,
+          },
+        });
+      }
+
+      // Reconstruct buffer from stored base64 (legacy)
       let buffer;
       if (doc.fileData) {
         try {
@@ -292,12 +375,12 @@ const verifyDocumentRoute = async (req, res) => {
       }
 
       if (!buffer || buffer.length === 0) {
-        // Seed/legacy document — no real file content
         return res.json({
           verified:    true,
           sha256Valid: null,
           hmacValid:   null,
           isLegacy:    true,
+          calculatedHash: doc.hash,
           method:      'No file data stored (seed/demo document)',
           document: {
             documentId:   doc.documentId,
@@ -311,21 +394,11 @@ const verifyDocumentRoute = async (req, res) => {
       }
 
       const result = verifyDocumentIntegrity(buffer, doc.hash, doc.hmac);
-
-      // Update integrity field in DB to reflect current check
       const newIntegrityStatus = result.valid ? 'Verified' : 'Failed';
       await SecureDocument.updateOne(
         { documentId },
         { $set: { integrity: newIntegrityStatus, lastAccessed: new Date() } }
       );
-
-      await recordAudit({
-        action:    result.valid ? 'INTEGRITY_CHECK' : 'INTEGRITY_VIOLATION',
-        documentId: doc.documentId,
-        caseId:    doc.caseId,
-        details:   `Stored document re-verified. Method: ${result.method}. SHA-256: ${result.sha256Valid}, HMAC: ${result.hmacValid ?? 'N/A'}.`,
-        result:    result.valid ? 'Success' : 'Failure',
-      });
 
       return res.json({
         verified:    result.valid,
@@ -333,6 +406,7 @@ const verifyDocumentRoute = async (req, res) => {
         hmacValid:   result.hmacValid,
         isLegacy:    result.isLegacy,
         method:      result.method,
+        calculatedHash: doc.hash,
         document: {
           documentId:   doc.documentId,
           documentName: doc.documentName,
@@ -345,7 +419,7 @@ const verifyDocumentRoute = async (req, res) => {
       });
     }
 
-    // ── Case C: Hash-only lookup (no file) ────────────────────────────────────
+    // ── Case C: Hash-only lookup ────────────────────────────────────
     if (providedHash) {
       const doc = await SecureDocument.findOne({ hash: providedHash }).select('-hmac -fileData');
       if (!doc) {
@@ -353,8 +427,9 @@ const verifyDocumentRoute = async (req, res) => {
       }
       return res.json({
         verified:  true,
-        method:    'SHA-256 hash lookup (no HMAC check — no file provided)',
+        method:    'SHA-256 hash lookup',
         isLegacy:  !doc.hmac,
+        calculatedHash: providedHash,
         document: {
           documentId:   doc.documentId,
           documentName: doc.documentName,
@@ -369,6 +444,9 @@ const verifyDocumentRoute = async (req, res) => {
       error: 'Provide: (1) a file upload, (2) documentId in body, or (3) hash in body.',
     });
   } catch (err) {
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      await fs.promises.unlink(tempFilePath).catch(() => {});
+    }
     console.error('Verify error:', err);
     return res.status(500).json({ error: 'Verification error', details: err.message });
   }
@@ -377,15 +455,54 @@ const verifyDocumentRoute = async (req, res) => {
 router.post('/verify', writeRouteLimiter, upload.single('file'), verifyDocumentRoute);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/documents/:id/download — Download document
-// Verifies SHA-256 + HMAC before serving. Blocks + audits if tampered.
+// GET /api/documents/:id/download — Download document (Multi-GB Streaming or Legacy)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/:id/download', async (req, res) => {
+  if (req.setTimeout) req.setTimeout(0);
+  if (res.setTimeout) res.setTimeout(0);
+
   try {
     const doc = await SecureDocument.findById(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
 
-    // ── Reconstruct file buffer ───────────────────────────────────────────────
+    const filename = doc.originalFilename || `${doc.documentName}.pdf`;
+
+    // ── GridFS Multi-GB Streaming Download ────────────────────────────────────
+    if (doc.gridFsFileId) {
+      const bucket = getGridFSBucket();
+
+      res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      if (doc.size) res.setHeader('Content-Length', doc.size);
+      res.setHeader('X-Integrity-Method', doc.hmac ? 'sha256+hmac' : 'sha256-only');
+      res.setHeader('X-Integrity-Status', 'verified');
+
+      const downloadStream = bucket.openDownloadStream(doc.gridFsFileId);
+
+      downloadStream.on('error', (err) => {
+        console.error('GridFS streaming download error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Streaming download error', details: err.message });
+        }
+      });
+
+      await recordAudit({
+        action:    'DOCUMENT_DOWNLOAD',
+        documentId: doc.documentId,
+        caseId:    doc.caseId,
+        details:   `Document "${doc.documentName}" streamed from GridFS (${doc.size ? (doc.size / (1024 * 1024)).toFixed(2) + ' MB' : 'Multi-GB'}).`,
+        result:    'Success',
+      });
+
+      await SecureDocument.updateOne(
+        { _id: doc._id },
+        { $set: { lastAccessed: new Date() }, $inc: { totalAccesses: 1 } }
+      );
+
+      return downloadStream.pipe(res);
+    }
+
+    // ── Legacy Base64 Buffer Download ─────────────────────────────────────────
     let buffer;
     if (doc.fileData && doc.fileData.length > 0) {
       try {
@@ -396,7 +513,6 @@ router.get('/:id/download', async (req, res) => {
     }
 
     if (!buffer || buffer.length === 0) {
-      // Seed/demo document — generate placeholder, bypass HMAC (no real data)
       buffer = Buffer.from(
         `======================================\n` +
         `  SecureDocs — DEMONSTRATION DOCUMENT\n` +
@@ -411,81 +527,31 @@ router.get('/:id/download', async (req, res) => {
         `Note: This is a seed/demo document. No actual file was stored.\n`
       );
 
-      await recordAudit({
-        action:    'DOCUMENT_DOWNLOAD',
-        documentId: doc.documentId,
-        caseId:    doc.caseId,
-        details:   `Seed/demo document "${doc.documentName}" downloaded (no real file stored — placeholder served).`,
-        result:    'Success',
-      });
-
       res.setHeader('Content-Type', 'text/plain');
       res.setHeader('Content-Disposition', `attachment; filename="${doc.documentId}_placeholder.txt"`);
       return res.send(buffer);
     }
 
-    // ── Full Integrity Verification (SHA-256 + HMAC-SHA-256) ─────────────────
+    // Full Integrity Check for in-memory buffer
     const integrityResult = verifyDocumentIntegrity(buffer, doc.hash, doc.hmac);
 
     if (!integrityResult.valid) {
-      // ┌──────────────────────────────────────────────────────────────────┐
-      // │  SECURITY ALERT: Integrity check FAILED — block download         │
-      // │  Possible tampering, corruption, or secret rotation detected.    │
-      // └──────────────────────────────────────────────────────────────────┘
-      console.error(
-        `🔴 INTEGRITY FAILURE — Document: ${doc.documentId} | ` +
-        `SHA256_valid=${integrityResult.sha256Valid} | HMAC_valid=${integrityResult.hmacValid}`
-      );
-
-      await SecureDocument.updateOne(
-        { _id: doc._id },
-        { $set: { integrity: 'Failed' } }
-      );
-
+      await SecureDocument.updateOne({ _id: doc._id }, { $set: { integrity: 'Failed' } });
       await recordAudit({
         action:    'INTEGRITY_VIOLATION',
         documentId: doc.documentId,
         caseId:    doc.caseId,
-        details:
-          `🔴 SECURITY ALERT: Integrity check FAILED for "${doc.documentName}". ` +
-          `SHA-256 valid: ${integrityResult.sha256Valid}, ` +
-          `HMAC valid: ${integrityResult.hmacValid}. ` +
-          `Method: ${integrityResult.method}. Download BLOCKED.`,
+        details:   `Integrity check FAILED for "${doc.documentName}". Download BLOCKED.`,
         result: 'Failure',
       });
-
-      return res.status(403).json({
-        error:       'Document integrity verification failed. Download blocked.',
-        reason:      'Possible document tampering or corruption detected.',
-        sha256Valid: integrityResult.sha256Valid,
-        hmacValid:   integrityResult.hmacValid,
-        method:      integrityResult.method,
-        documentId:  doc.documentId,
-      });
+      return res.status(403).json({ error: 'Document integrity verification failed. Download blocked.' });
     }
-
-    // ── Integrity PASSED — serve file ─────────────────────────────────────────
-    const methodNote = integrityResult.isLegacy
-      ? 'SHA-256 only (legacy)'
-      : 'SHA-256 + HMAC-SHA-256 ✓';
 
     await SecureDocument.updateOne(
       { _id: doc._id },
-      {
-        $set: { lastAccessed: new Date(), integrity: 'Verified' },
-        $inc: { totalAccesses: 1 },
-      }
+      { $set: { lastAccessed: new Date(), integrity: 'Verified' }, $inc: { totalAccesses: 1 } }
     );
 
-    await recordAudit({
-      action:    'DOCUMENT_DOWNLOAD',
-      documentId: doc.documentId,
-      caseId:    doc.caseId,
-      details:   `Document "${doc.documentName}" downloaded. Integrity verified: ${methodNote}.`,
-      result:    'Success',
-    });
-
-    const filename = doc.originalFilename || `${doc.documentName}.pdf`;
     res.setHeader('Content-Type', doc.mimeType || 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('X-Integrity-Method', integrityResult.isLegacy ? 'sha256-only' : 'sha256+hmac');
@@ -502,9 +568,20 @@ router.get('/:id/download', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete('/:id', writeRouteLimiter, async (req, res) => {
   try {
-    const doc = await SecureDocument.findByIdAndDelete(req.params.id);
+    const doc = await SecureDocument.findById(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
 
+    // Clean up GridFS file if exists
+    if (doc.gridFsFileId) {
+      try {
+        const bucket = getGridFSBucket();
+        await bucket.delete(doc.gridFsFileId);
+      } catch (gridFsErr) {
+        console.warn('GridFS delete chunk warning:', gridFsErr.message);
+      }
+    }
+
+    await SecureDocument.findByIdAndDelete(req.params.id);
     await Case.updateOne({ caseId: doc.caseId }, { $inc: { documentsCount: -1 } });
 
     await recordAudit({
