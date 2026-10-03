@@ -4,52 +4,38 @@ import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 
 /**
- * Main responsive app layout.
- * Desktop (>=1024px): Collapsible sidebar inline with main content.
- * Mobile (<1024px): Floating drawer sidebar with smooth backdrop overlay.
+ * Main app layout:
+ * - Desktop (>=1024px): Permanent left sidebar + top navbar + main content
+ * - Mobile (<1024px): Sliding drawer sidebar + top navbar + main content
  */
 export function Layout({ children }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [location] = useLocation();
 
-  // Initialize sidebar based on screen size on mount
+  // Close mobile drawer when route changes
   useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth >= 1024) {
-        setSidebarOpen(true);
-      } else {
-        setSidebarOpen(false);
-      }
-    };
-    handleResize();
-  }, []);
-
-  // Automatically close sidebar on mobile when navigating to a new page
-  useEffect(() => {
-    if (window.innerWidth < 1024) {
-      setSidebarOpen(false);
-    }
+    setMobileMenuOpen(false);
   }, [location]);
 
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900 relative">
+    <div className="flex min-h-screen bg-slate-50 text-slate-900">
 
       {/* Mobile Drawer Backdrop Overlay */}
-      {sidebarOpen && (
+      {mobileMenuOpen && (
         <div
-          onClick={() => setSidebarOpen(false)}
+          onClick={() => setMobileMenuOpen(false)}
           className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-40 lg:hidden transition-opacity duration-300"
           aria-hidden="true"
         />
       )}
 
-      {/* Responsive Sidebar */}
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      {/* Sidebar (Permanent on Desktop, Drawer on Mobile) */}
+      <Sidebar isOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
 
-      {/* Main Content Container */}
+      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-        <Navbar onMenuToggle={() => setSidebarOpen(prev => !prev)} sidebarOpen={sidebarOpen} />
-        <main className="flex-1 p-3 sm:p-6 lg:p-8 w-full max-w-7xl mx-auto">
+        <Navbar onMenuToggle={() => setMobileMenuOpen((prev) => !prev)} />
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 w-full max-w-7xl mx-auto">
           {children}
         </main>
       </div>
@@ -57,4 +43,3 @@ export function Layout({ children }) {
     </div>
   );
 }
-
