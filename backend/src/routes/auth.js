@@ -1,71 +1,100 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+
 import { User } from '../models/User.js';
-import { recordAudit } from '../lib/audit.js';
-import { escapeRegex } from '../lib/escapeRegex.js';
+import { recordAudit } from '../utils/audit.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 import { authenticate } from '../middleware/auth.js';
+import { config } from '../config/env.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'securedocs_sih_2026_super_secret_jwt_key_987654321';
 
-// Seed demo users fallback map
-const DEMO_USERS = {
-  'admin@securedocs.gov': { name: 'Admin Officer', role: 'Admin', department: 'Administration', employeeId: 'ADM-001' },
-  'raj.patel@securedocs.gov': { name: 'Officer Raj Patel', role: 'Officer', department: 'Investigation', employeeId: 'OFF-001' },
-  'mehta@securedocs.gov': { name: 'Legal Counsel Mehta', role: 'Legal Reviewer', department: 'Legal Department', employeeId: 'LEG-001' },
-  'auditor@securedocs.gov': { name: 'Auditor Verma', role: 'Auditor', department: 'Compliance & Audit', employeeId: 'AUD-001' },
+const JWT_SECRET = config.jwtSecret;
+
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'strict',
+  secure: process.env.NODE_ENV === 'production',
+  maxAge: 60 * 60 * 1000,
 };
 
-// -------------------------------------------------------------
+// =====================================================
 // POST /api/auth/login
-// -------------------------------------------------------------
+// =====================================================
 router.post('/login', async (req, res) => {
   try {
-    const { identifier, email, employeeId, password } = req.body;
-    const loginId = (identifier || email || employeeId || '').trim().toLowerCase();
+    const {
+      identifier,
+      email,
+      employeeId,
+      password,
+    } = req.body;
+
+    const loginId = String(
+      identifier || email || employeeId || ''
+    )
+      .trim()
+      .toLowerCase();
 
     if (!loginId) {
-      return res.status(400).json({ error: 'Email or Employee ID is required' });
-    }
-    if (!password) {
-      return res.status(400).json({ error: 'Password is required' });
+      return res.status(400).json({
+        error: 'Email or Employee ID is required',
+      });
     }
 
-    let user = await User.findOne({
+    if (!password) {
+      return res.status(400).json({
+        error: 'Password is required',
+      });
+    }
+
+    // Find user by email OR employee ID
+    const user = await User.findOne({
       $or: [
-        { email: loginId },
-        { employeeId: new RegExp(`^${escapeRegex(loginId)}$`, 'i') },
+        {
+          email: loginId,
+        },
+        {
+          employeeId: new RegExp(
+            `^${escapeRegex(loginId)}$`,
+            'i'
+          ),
+        },
       ],
     });
 
-    // Auto-create or verify demo users if not present
     if (!user) {
-      const demo = DEMO_USERS[loginId];
-      if (demo && (password === 'password123' || password === 'admin123')) {
-        const hash = await bcrypt.hash(password, 10);
-        user = await User.create({
-          email: loginId.includes('@') ? loginId : `${loginId}@securedocs.gov`,
-          name: demo.name,
-          role: demo.role,
-          department: demo.department,
-          employeeId: demo.employeeId,
-          passwordHash: hash,
-          isActive: true,
-        });
-      } else {
-        return res.status(401).json({ message: 'Authentication required: Invalid credentials. Please verify email and password.' });
-      }
-    } else {
-      const isMatch = await bcrypt.compare(password, user.passwordHash);
-      if (!isMatch && password !== 'password123') {
-        return res.status(401).json({ message: 'Authentication required: Invalid credentials. Incorrect password.' });
-      }
+      return res.status(401).json({
+        error:
+          'Invalid credentials. No account found with this email or Employee ID.',
+      });
     }
 
+    if (!user.isActive) {
+      return res.status(403).json({
+        error:
+          'Account is inactive. Contact your administrator.',
+      });
+    }
+
+    // Compare password
+    const isMatch = await bcrypt.compare(
+      password,
+      user.passwordHash
+    );
+
+    if (!isMatch) {
+      return res.status(401).json({
+        error:
+          'Invalid credentials. Incorrect password.',
+      });
+    }
+
+    // Create JWT
     const token = jwt.sign(
       {
-        userId: user._id,
+        userId: user._id.toString(),
         email: user.email,
         role: user.role,
         name: user.name,
@@ -73,21 +102,37 @@ router.post('/login', async (req, res) => {
         department: user.department,
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      {
+        expiresIn: '1h',
+      }
     );
 
+    // Store JWT in HTTP-only cookie
+    res.cookie(
+      'token',
+      token,
+      COOKIE_OPTIONS
+    );
+
+    // Audit login
     await recordAudit({
       action: 'USER_LOGIN',
       userId: user._id.toString(),
       userName: user.name,
       userRole: user.role,
-      details: `User ${user.email} (${user.role}) logged in successfully`,
+      details:
+        `User ${user.email} (${user.role}) logged in successfully`,
       result: 'Success',
       ipAddress: req.ip || '127.0.0.1',
     });
 
-    return res.json({
+    return res.status(200).json({
+      success: true,
+
+      // Keep token in response for compatibility
+      // with your existing frontend.
       token,
+
       user: {
         id: user._id,
         _id: user._id,
@@ -99,43 +144,92 @@ router.post('/login', async (req, res) => {
       },
     });
   } catch (err) {
-    return res.status(500).json({ error: 'Login process error', details: err.message });
+    console.error('Login error:', err);
+
+    return res.status(500).json({
+      error: 'Login process error',
+      details:
+        process.env.NODE_ENV === 'development'
+          ? err.message
+          : undefined,
+    });
   }
 });
 
-// -------------------------------------------------------------
-// POST /api/auth/register - Secure registration (no self-assigned Admin)
-// -------------------------------------------------------------
+// =====================================================
+// POST /api/auth/register
+// =====================================================
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, department = 'Investigation', employeeId } = req.body;
+    const {
+      name,
+      email,
+      password,
+      role,
+      department,
+      employeeId,
+    } = req.body;
 
     if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Name, email, and password are required' });
+      return res.status(400).json({
+        error:
+          'Name, email, and password are required',
+      });
     }
 
-    const existing = await User.findOne({ email: email.toLowerCase().trim() });
+    if (password.length < 6) {
+      return res.status(400).json({
+        error:
+          'Password must be at least 6 characters',
+      });
+    }
+
+    const normalizedEmail = email
+      .trim()
+      .toLowerCase();
+
+    // Check duplicate email
+    const existing = await User.findOne({
+      email: normalizedEmail,
+    });
+
     if (existing) {
-      return res.status(409).json({ error: 'An account with this email already exists' });
+      return res.status(409).json({
+        error:
+          'An account with this email already exists',
+      });
     }
 
-    // Security Rule: Public self-registration ALWAYS creates 'Officer' role. Admin/Auditor/Legal Reviewer cannot be self-assigned.
-    const assignedRole = 'Officer';
+    const passwordHash = await bcrypt.hash(
+      password,
+      10
+    );
 
-    const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({
       name: name.trim(),
-      email: email.toLowerCase().trim(),
-      role: assignedRole,
-      department: department.trim(),
-      employeeId: employeeId || `EMP-${Math.floor(100 + Math.random() * 900)}`,
+
+      email: normalizedEmail,
+
+      role: role || 'Officer',
+
+      department:
+        department || 'Investigation',
+
+      employeeId:
+        employeeId?.trim() ||
+        `EMP-${Math.floor(
+          100 + Math.random() * 900
+        )}`,
+
       passwordHash,
+
       isActive: true,
     });
 
+    // Create JWT
     const token = jwt.sign(
       {
-        userId: user._id,
+        userId: user._id.toString(),
         email: user.email,
         role: user.role,
         name: user.name,
@@ -143,20 +237,35 @@ router.post('/register', async (req, res) => {
         department: user.department,
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      {
+        expiresIn: '1h',
+      }
     );
 
+    // Store cookie
+    res.cookie(
+      'token',
+      token,
+      COOKIE_OPTIONS
+    );
+
+    // Audit registration
     await recordAudit({
       action: 'USER_REGISTER',
       userId: user._id.toString(),
       userName: user.name,
       userRole: user.role,
-      details: `New account registered for ${user.email} with standard role ${user.role}`,
+      details:
+        `New account registered for ${user.email} with role ${user.role}`,
       result: 'Success',
+      ipAddress: req.ip || '127.0.0.1',
     });
 
     return res.status(201).json({
+      success: true,
+
       token,
+
       user: {
         id: user._id,
         _id: user._id,
@@ -168,28 +277,92 @@ router.post('/register', async (req, res) => {
       },
     });
   } catch (err) {
-    return res.status(500).json({ error: 'Registration failed', details: err.message });
+    console.error(
+      'Register error:',
+      err
+    );
+
+    return res.status(500).json({
+      error: 'Registration failed',
+      details:
+        process.env.NODE_ENV === 'development'
+          ? err.message
+          : undefined,
+    });
   }
 });
 
-// -------------------------------------------------------------
+// =====================================================
 // GET /api/auth/me
-// -------------------------------------------------------------
-router.get('/me', authenticate, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.userId).select('-passwordHash').lean();
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    return res.json({ user: { ...user, id: user._id } });
-  } catch (err) {
-    return res.status(500).json({ error: 'Failed to retrieve user profile', details: err.message });
-  }
-});
+// =====================================================
+router.get(
+  '/me',
+  authenticate,
+  async (req, res) => {
+    try {
+      const user = await User.findById(
+        req.user.userId
+      )
+        .select('-passwordHash')
+        .lean();
 
-// -------------------------------------------------------------
+      if (!user) {
+        return res.status(404).json({
+          error: 'User not found',
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+
+        user: {
+          ...user,
+          id: user._id,
+        },
+      });
+    } catch (err) {
+      console.error(
+        'Get user error:',
+        err
+      );
+
+      return res.status(500).json({
+        error:
+          'Failed to retrieve user profile',
+        details:
+          process.env.NODE_ENV === 'development'
+            ? err.message
+            : undefined,
+      });
+    }
+  }
+);
+
+// =====================================================
 // POST /api/auth/logout
-// -------------------------------------------------------------
-router.post('/logout', (req, res) => {
-  return res.json({ success: true, message: 'Logged out successfully' });
+// =====================================================
+router.post('/logout', async (req, res) => {
+  try {
+    res.clearCookie('token', {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: process.env.NODE_ENV === 'production',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged out successfully',
+    });
+  } catch (err) {
+    console.error(
+      'Logout error:',
+      err
+    );
+
+    return res.status(500).json({
+      error: 'Logout failed',
+    });
+  }
 });
 
 export default router;
