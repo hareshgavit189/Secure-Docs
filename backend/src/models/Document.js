@@ -72,8 +72,12 @@ const documentSchema = new mongoose.Schema(
       default: 'Confidential',
     },
     fileData: {
-      type: String, // Base64 encoded or content for demo download
+      type: String, // Base64 encoded or content for demo download (for small files)
       default: '',
+    },
+    gridFsFileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
     },
     totalAccesses: {
       type: Number,

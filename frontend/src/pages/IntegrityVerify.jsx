@@ -25,15 +25,22 @@ export default function IntegrityVerify() {
     setFile(selectedFile);
     setResult(null);
 
-    try {
-      const buffer = await selectedFile.arrayBuffer();
-      const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-      setComputedHash(hashHex);
-      setInputHash(hashHex);
-    } catch (err) {
-      console.error('Crypto error:', err);
+    // If file is <= 64MB, compute hash immediately in browser
+    if (selectedFile.size <= 64 * 1024 * 1024) {
+      try {
+        const buffer = await selectedFile.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+        setComputedHash(hashHex);
+        setInputHash(hashHex);
+      } catch (err) {
+        console.error('Crypto error:', err);
+      }
+    } else {
+      // Large multi-GB file: server streaming hash computation will be used
+      setComputedHash('Calculated upon verification via high-speed server stream');
+      setInputHash('');
     }
   };
 
@@ -49,8 +56,19 @@ export default function IntegrityVerify() {
     setResult(null);
 
     try {
-      const res = await documentService.verifyDocument({ hash: hashToTest });
+      let res;
+      if (file && (!hashToTest || file.size > 64 * 1024 * 1024)) {
+        const formData = new FormData();
+        formData.append('file', file);
+        if (hashToTest) formData.append('hash', hashToTest);
+        res = await documentService.verifyDocument(formData);
+      } else {
+        res = await documentService.verifyDocument({ hash: hashToTest });
+      }
       setResult(res);
+      if (res.calculatedHash || res.hash) {
+        setComputedHash(res.calculatedHash || res.hash);
+      }
     } catch (err) {
       alert(`Verification check error: ${err.message}`);
     } finally {

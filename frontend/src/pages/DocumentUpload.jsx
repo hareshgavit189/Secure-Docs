@@ -53,7 +53,7 @@ export default function DocumentUpload() {
     loadCases();
   }, []);
 
-  // Compute SHA-256 client side when a file is selected
+  // Compute SHA-256 client side when a file is selected (streaming for multi-GB)
   const handleFileChange = async (e) => {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -63,15 +63,21 @@ export default function DocumentUpload() {
       setDocumentName(selectedFile.name.replace(/\.[^/.]+$/, ''));
     }
 
-    // Client-side SHA-256 hash computation
-    try {
-      const arrayBuffer = await selectedFile.arrayBuffer();
-      const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-      setClientHash(hashHex);
-    } catch (err) {
-      console.warn('Browser crypto calculation notice:', err);
+    // For files <= 64 MB, calculate hash immediately in browser
+    // For files > 64 MB (e.g. 1GB+), server stream hash calculation prevents browser tab memory limits
+    if (selectedFile.size <= 64 * 1024 * 1024) {
+      try {
+        const arrayBuffer = await selectedFile.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+        setClientHash(hashHex);
+      } catch (err) {
+        console.warn('Browser crypto calculation notice:', err);
+      }
+    } else {
+      const sizeGB = (selectedFile.size / (1024 * 1024 * 1024)).toFixed(2);
+      setClientHash(`Large Evidence File (${sizeGB} GB) — High-throughput server-side streaming SHA-256 calculation & GridFS chunking active`);
     }
   };
 
@@ -217,7 +223,7 @@ export default function DocumentUpload() {
                     {file ? file.name : 'Click to browse or drag file here'}
                   </div>
                   <div className="text-[10px] text-slate-400 mt-1">
-                    Accepts PDF, DOCX, XLSX, TXT, PNG, JPG (Up to 30 MB)
+                    Accepts any file format (PDF, DOCX, ZIP, PCAP, ISO, MP4, Scans — Supports Multi-GB up to 5 GB via GridFS)
                   </div>
                 </div>
 
